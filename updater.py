@@ -67,11 +67,11 @@ def apprise_urls(raw):
 
 
 def notice_text(address, changes):
-    lines = [f"目前公網 IP：{address}"]
+    lines = [f"Current public IP: {address}"]
     for change in changes:
-        before = change["before"] or "（新紀錄）"
-        lines.append(f"{change['name']}：{before} → {change['after']}")
-    return "IP 已更改", "\n".join(lines)
+        before = change["before"] or "(new record)"
+        lines.append(f"{change['name']}: {before} → {change['after']}")
+    return "IP changed", "\n".join(lines)
 
 
 def cname_target(records):
@@ -324,7 +324,7 @@ def self_test():
     ]
     assert apprise_urls("") == []
     title, body = notice_text("1.2.3.4", [{"name": "wan1.wongkino.com", "before": "9.9.9.9", "after": "1.2.3.4"}])
-    assert title == "IP 已更改"
+    assert title == "IP changed"
     assert "9.9.9.9 → 1.2.3.4" in body
     log("自我測試通過")
 
