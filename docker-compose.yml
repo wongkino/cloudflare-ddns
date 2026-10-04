@@ -1,0 +1,8 @@
+services:
+  apex-dns:
+    build: .
+    image: wongkino-apex-dns
+    container_name: wongkino-apex-dns
+    restart: unless-stopped
+    env_file:
+      - .env
