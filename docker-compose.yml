@@ -1,8 +1,8 @@
 services:
-  apex-dns:
+  cloudflare-ddns:
     build: .
-    image: wongkino-apex-dns
-    container_name: wongkino-apex-dns
+    image: cloudflare-ddns
+    container_name: cloudflare-ddns
     restart: unless-stopped
     env_file:
       - .env
