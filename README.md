@@ -91,6 +91,23 @@ APPRISE_URLS=https://apprise.example.com/notify/金鑰
 
 IP 改變時的通知標題是「IP 已更改」。內容包含目前公網 IP，以及每個紀錄的舊位址和新位址。
 
+## 手動建立 AMD64 映像
+
+在 GitHub 開啟 **Actions**，選擇 **Build AMD64 image**，再按 **Run workflow**。這個工作只會在手動執行時跑，並建立 `linux/amd64` 映像，推送到私人套件：
+
+```text
+ghcr.io/wongkino/cloudflare-ddns:amd64
+```
+
+同一輪也會加上 `amd64-` 開頭的 commit 標籤。在 x86_64 主機上拉取前，先用有 `read:packages` 權限的 GitHub token 登入：
+
+```bash
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u wongkino --password-stdin
+docker pull ghcr.io/wongkino/cloudflare-ddns:amd64
+```
+
+本機 Apple Silicon 若只想自己建映像，仍使用 `docker compose up -d --build`，那個映像是執行建置的那台機器的架構。
+
 ## 常用指令
 
 ```bash
