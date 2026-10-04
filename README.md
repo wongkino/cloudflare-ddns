@@ -145,9 +145,13 @@ To build a `linux/amd64` image separately, open **Actions** on GitHub, choose **
 ghcr.io/wongkino/cloudflare-ddns:amd64
 ```
 
-同一輪也會加上 `amd64-` 開頭的 commit 標籤。拉取前，先用有 `read:packages` 權限的 GitHub token 登入：
+同一輪也會加上 `amd64-` 開頭的 commit 標籤。**Version** 可留空。若填 `1.2.0` 這類版本號，會再推一個同名標籤，例如 `ghcr.io/wongkino/cloudflare-ddns:1.2.0`。格式須為 `1.2`、`1.2.0`、`v1.2.0`，或在後面加 `-rc1` 這類後綴。
 
-The same run also adds a commit tag prefixed with `amd64-`. Before pulling, log in with a GitHub token that has `read:packages`:
+The same run also adds a commit tag prefixed with `amd64-`. **Version** can be left empty. A value such as `1.2.0` adds a tag of that name, for example `ghcr.io/wongkino/cloudflare-ddns:1.2.0`. Use `1.2`, `1.2.0`, `v1.2.0`, or the same form with a suffix such as `-rc1`.
+
+拉取前，先用有 `read:packages` 權限的 GitHub token 登入：
+
+Before pulling, log in with a GitHub token that has `read:packages`:
 
 ```bash
 echo "$GITHUB_TOKEN" | docker login ghcr.io -u wongkino --password-stdin

@@ -2,6 +2,11 @@ name: Build AMD64 image
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: 版本號，例如 1.2.0。留空則不另加版本標籤。
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -28,6 +33,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check version
+        if: inputs.version != ''
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if ! [[ "$VERSION" =~ ^v?[0-9]+(\.[0-9]+){1,2}(-[A-Za-z0-9.]+)?$ ]]; then
+            echo "版本號須像 1.2.0 或 v1.2.0，目前是：$VERSION"
+            exit 1
+          fi
+
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -36,6 +51,7 @@ jobs:
           tags: |
             type=raw,value=amd64
             type=sha,prefix=amd64-
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
