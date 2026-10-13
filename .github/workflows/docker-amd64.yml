@@ -1,10 +1,18 @@
-name: Build AMD64 image
+name: Build image
 
 on:
   workflow_dispatch:
     inputs:
+      platform:
+        description: 映像架構。amd64 給一般電腦，arm64 給 64-bit Raspberry Pi。
+        required: false
+        default: amd64
+        type: choice
+        options:
+          - amd64
+          - arm64
       version:
-        description: 版本號，例如 2.0.0。留空則自動把現有最大版本的 patch 加一。
+        description: 版本號，例如 2.0.0。留空則自動把這個架構現有最大版本的 patch 加一。
         required: false
         type: string
 
@@ -16,12 +24,16 @@ env:
   IMAGE: ghcr.io/wongkino/cloudflare-ddns
 
 jobs:
-  amd64:
-    name: linux/amd64
+  image:
+    name: linux/${{ inputs.platform }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        if: inputs.platform == 'arm64'
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -37,6 +49,7 @@ jobs:
         id: version
         env:
           VERSION: ${{ inputs.version }}
+          ARCH: ${{ inputs.platform }}
           GH_ACTOR: ${{ github.actor }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -50,8 +63,12 @@ jobs:
           import urllib.request
 
           requested = os.environ.get("VERSION", "").strip()
+          arch = os.environ.get("ARCH", "amd64").strip() or "amd64"
+          suffix = "" if arch == "amd64" else f"-{arch}"
           pattern = re.compile(r"^v?[0-9]+(\.[0-9]+){1,2}(-[A-Za-z0-9.]+)?$")
-          stable = re.compile(r"^v?(?P<major>[0-9]+)\.(?P<minor>[0-9]+)\.(?P<patch>[0-9]+)$")
+          stable = re.compile(
+              rf"^v?(?P<major>[0-9]+)\.(?P<minor>[0-9]+)\.(?P<patch>[0-9]+){re.escape(suffix)}$"
+          )
 
           def emit(version, note):
               print(note)
@@ -62,6 +79,8 @@ jobs:
           if requested:
               if not pattern.match(requested):
                   raise SystemExit(f"版本號須像 1.2.0 或 v1.2.0，目前是：{requested}")
+              if suffix and not requested.endswith(suffix):
+                  requested = f"{requested}{suffix}"
               emit(requested, f"使用指定版本 {requested}")
               raise SystemExit(0)
 
@@ -96,7 +115,7 @@ jobs:
                   payload = json.load(response)
           except urllib.error.HTTPError as error:
               if error.code == 404:
-                  emit("1.0.0", "沒有舊映像，版本為 1.0.0")
+                  emit(f"1.0.0{suffix}", f"沒有舊映像，版本為 1.0.0{suffix}")
                   raise SystemExit(0)
               detail = error.read().decode()[:300]
               raise SystemExit(f"讀取映像標籤失敗 ({error.code}): {detail}")
@@ -107,10 +126,10 @@ jobs:
               if match:
                   found.append(tuple(int(match.group(name)) for name in ("major", "minor", "patch")))
           if not found:
-              emit("1.0.0", "沒有既有版本標籤，版本為 1.0.0")
+              emit(f"1.0.0{suffix}", f"沒有既有版本標籤，版本為 1.0.0{suffix}")
               raise SystemExit(0)
           major, minor, patch = max(found)
-          version = f"{major}.{minor}.{patch + 1}"
+          version = f"{major}.{minor}.{patch + 1}{suffix}"
           emit(version, f"自動版本 {version}")
           PY
 
@@ -120,17 +139,17 @@ jobs:
         with:
           images: ${{ env.IMAGE }}
           tags: |
-            type=raw,value=amd64
-            type=sha,prefix=amd64-
+            type=raw,value=${{ inputs.platform }}
+            type=sha,prefix=${{ inputs.platform }}-
             type=raw,value=${{ steps.version.outputs.version }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64
+          platforms: linux/${{ inputs.platform }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ inputs.platform }}
+          cache-to: type=gha,mode=max,scope=${{ inputs.platform }}

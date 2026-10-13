@@ -158,23 +158,36 @@ When an address changes, the notification is sent in English. The title is `IP c
 
 ## 發佈映像 / Publish an image
 
-若要另外建立 `linux/amd64` 映像，在 GitHub 開啟 **Actions**，選擇 **Build AMD64 image**，再按 **Run workflow**。這個工作只會在手動執行時跑，並把映像推到 GitHub Container Registry：
+在 GitHub 開啟 **Actions**，選擇 **Build image**，再按 **Run workflow**。這個工作只會在手動執行時跑。**Platform** 選 `amd64` 給一般電腦，選 `arm64` 給 64-bit Raspberry Pi OS（Pi 3、4、5、Zero 2 W）。32-bit 的 Raspberry Pi OS 不能用這個 `arm64` 映像。
 
-To build a `linux/amd64` image separately, open **Actions** on GitHub, choose **Build AMD64 image**, and select **Run workflow**. The workflow runs only when started manually and pushes the image to GitHub Container Registry:
+Open **Actions** on GitHub, choose **Build image**, and select **Run workflow**. The workflow runs only when started manually. Choose `amd64` for a regular computer, or `arm64` for 64-bit Raspberry Pi OS (Pi 3, 4, 5, and Zero 2 W). 32-bit Raspberry Pi OS cannot run this `arm64` image.
+
+映像會推到 GitHub Container Registry：
+
+The image is pushed to GitHub Container Registry:
 
 ```text
 ghcr.io/wongkino/cloudflare-ddns:amd64
+ghcr.io/wongkino/cloudflare-ddns:arm64
 ```
 
-同一輪也會加上 `amd64-` 開頭的 commit 標籤，以及一個版本標籤。**Version** 留空時，會把現有最大版本的 patch 加一；還沒有版本標籤時從 `1.0.0` 開始。只有要指定版本時才填，例如 `2.0.0`。格式須為 `1.2`、`1.2.0`、`v1.2.0`，或在後面加 `-rc1` 這類後綴。
+同一輪也會加上架構開頭的 commit 標籤，以及一個版本標籤。`amd64` 的版本像 `1.0.1`，`arm64` 的版本像 `1.0.1-arm64`，兩邊各自遞增。**Version** 留空時，會把該架構現有最大版本的 patch 加一；還沒有版本標籤時從 `1.0.0` 開始。只有要指定版本時才填，例如 `2.0.0`。格式須為 `1.2`、`1.2.0`、`v1.2.0`，或在後面加 `-rc1` 這類後綴。
 
-The same run also adds a commit tag prefixed with `amd64-`, plus a version tag. An empty **Version** increments the patch number of the highest existing version, or starts at `1.0.0` when no version tag exists. Fill it in only to choose a version, for example `2.0.0`. Use `1.2`, `1.2.0`, `v1.2.0`, or the same form with a suffix such as `-rc1`.
+The same run also adds a commit tag prefixed with the architecture, plus a version tag. An `amd64` version looks like `1.0.1`, and an `arm64` version looks like `1.0.1-arm64`. Each architecture increments on its own. An empty **Version** increments the patch number of that architecture's highest version, or starts at `1.0.0` when no version tag exists. Fill it in only to choose a version, for example `2.0.0`. Use `1.2`, `1.2.0`, `v1.2.0`, or the same form with a suffix such as `-rc1`.
+
+64-bit Raspberry Pi 用 `docker-compose.ghcr.arm64.yml`：
+
+On a 64-bit Raspberry Pi, use `docker-compose.ghcr.arm64.yml`:
+
+```bash
+docker compose -f docker-compose.ghcr.arm64.yml up -d
+```
 
 ## 常用指令 / Common commands
 
-GitHub 映像的指令都要加上 `-f docker-compose.ghcr.yml`。本機建置則直接用 `docker compose`。
+GitHub 的 `amd64` 映像指令都要加上 `-f docker-compose.ghcr.yml`。64-bit Raspberry Pi 改用 `-f docker-compose.ghcr.arm64.yml`。本機建置則直接用 `docker compose`。
 
-For the GitHub image, add `-f docker-compose.ghcr.yml` to every command. For a local build, use `docker compose` alone.
+For the GitHub `amd64` image, add `-f docker-compose.ghcr.yml`. On a 64-bit Raspberry Pi, use `-f docker-compose.ghcr.arm64.yml`. For a local build, use `docker compose` alone.
 
 ```bash
 docker compose -f docker-compose.ghcr.yml logs -f
