@@ -165,9 +165,9 @@ To build a `linux/amd64` image separately, open **Actions** on GitHub, choose **
 ghcr.io/wongkino/cloudflare-ddns:amd64
 ```
 
-同一輪也會加上 `amd64-` 開頭的 commit 標籤。**Version** 可留空。若填 `1.2.0` 這類版本號，會再推一個同名標籤，例如 `ghcr.io/wongkino/cloudflare-ddns:1.2.0`。格式須為 `1.2`、`1.2.0`、`v1.2.0`，或在後面加 `-rc1` 這類後綴。
+同一輪也會加上 `amd64-` 開頭的 commit 標籤，以及一個版本標籤。**Version** 留空時，會把現有最大版本的 patch 加一；還沒有版本標籤時從 `1.0.0` 開始。只有要指定版本時才填，例如 `2.0.0`。格式須為 `1.2`、`1.2.0`、`v1.2.0`，或在後面加 `-rc1` 這類後綴。
 
-The same run also adds a commit tag prefixed with `amd64-`. **Version** can be left empty. A value such as `1.2.0` adds a tag of that name, for example `ghcr.io/wongkino/cloudflare-ddns:1.2.0`. Use `1.2`, `1.2.0`, `v1.2.0`, or the same form with a suffix such as `-rc1`.
+The same run also adds a commit tag prefixed with `amd64-`, plus a version tag. An empty **Version** increments the patch number of the highest existing version, or starts at `1.0.0` when no version tag exists. Fill it in only to choose a version, for example `2.0.0`. Use `1.2`, `1.2.0`, `v1.2.0`, or the same form with a suffix such as `-rc1`.
 
 ## 常用指令 / Common commands
 

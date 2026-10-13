@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 版本號，例如 1.2.0。留空則不另加版本標籤。
+        description: 版本號，例如 2.0.0。留空則自動把現有最大版本的 patch 加一。
         required: false
         type: string
 
@@ -33,15 +33,66 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check version
-        if: inputs.version != ''
+      - name: Resolve version
+        id: version
         env:
           VERSION: ${{ inputs.version }}
+          GH_ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if ! [[ "$VERSION" =~ ^v?[0-9]+(\.[0-9]+){1,2}(-[A-Za-z0-9.]+)?$ ]]; then
-            echo "版本號須像 1.2.0 或 v1.2.0，目前是：$VERSION"
-            exit 1
-          fi
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+          import re
+          import urllib.error
+          import urllib.request
+
+          requested = os.environ.get("VERSION", "").strip()
+          pattern = re.compile(r"^v?[0-9]+(\.[0-9]+){1,2}(-[A-Za-z0-9.]+)?$")
+          stable = re.compile(r"^v?(?P<major>[0-9]+)\.(?P<minor>[0-9]+)\.(?P<patch>[0-9]+)$")
+
+          def emit(version, note):
+              print(note)
+              path = os.environ["GITHUB_OUTPUT"]
+              with open(path, "a", encoding="utf-8") as handle:
+                  handle.write(f"version={version}\n")
+
+          if requested:
+              if not pattern.match(requested):
+                  raise SystemExit(f"版本號須像 1.2.0 或 v1.2.0，目前是：{requested}")
+              emit(requested, f"使用指定版本 {requested}")
+              raise SystemExit(0)
+
+          token = base64.b64encode(
+              f"{os.environ['GH_ACTOR']}:{os.environ['GH_TOKEN']}".encode()
+          ).decode()
+          request = urllib.request.Request(
+              "https://ghcr.io/v2/wongkino/cloudflare-ddns/tags/list?n=1000",
+              headers={"Authorization": f"Basic {token}"},
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  payload = json.load(response)
+          except urllib.error.HTTPError as error:
+              if error.code == 404:
+                  emit("1.0.0", "沒有舊映像，版本為 1.0.0")
+                  raise SystemExit(0)
+              detail = error.read().decode()[:300]
+              raise SystemExit(f"讀取映像標籤失敗 ({error.code}): {detail}")
+
+          found = []
+          for tag in payload.get("tags") or []:
+              match = stable.match(tag)
+              if match:
+                  found.append(tuple(int(match.group(name)) for name in ("major", "minor", "patch")))
+          if not found:
+              emit("1.0.0", "沒有既有版本標籤，版本為 1.0.0")
+              raise SystemExit(0)
+          major, minor, patch = max(found)
+          version = f"{major}.{minor}.{patch + 1}"
+          emit(version, f"自動版本 {version}")
+          PY
 
       - name: Docker metadata
         id: meta
@@ -51,7 +102,7 @@ jobs:
           tags: |
             type=raw,value=amd64
             type=sha,prefix=amd64-
-            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
+            type=raw,value=${{ steps.version.outputs.version }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
