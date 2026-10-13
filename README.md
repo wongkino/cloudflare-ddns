@@ -1,8 +1,8 @@
 # cloudflare-ddns
 
-定期查詢主機目前的公網 IPv4 與 IPv6，把指定的 Cloudflare A、AAAA 紀錄改成這兩個位址。位址改變時，再用 [Apprise](https://github.com/caronc/apprise) 發通知。
+定期查詢主機目前的公網 IPv4 與 IPv6，把指定的 Cloudflare A、AAAA 紀錄改成這兩個位址。`RECORD_TYPES` 可以只查 A、只查 AAAA，或兩者都查。位址改變時，再用 [Apprise](https://github.com/caronc/apprise) 發通知。
 
-Periodically look up this host's current public IPv4 and IPv6, and point the configured Cloudflare A and AAAA records at those addresses. When an address actually changes, send a notification through [Apprise](https://github.com/caronc/apprise).
+Periodically look up this host's current public IPv4 and IPv6, and point the configured Cloudflare A and AAAA records at those addresses. `RECORD_TYPES` can check A only, AAAA only, or both. When an address actually changes, send a notification through [Apprise](https://github.com/caronc/apprise).
 
 容器走主機的預設路由。預設閘道切換之後，下一輪查到的就是新線路的位址，清單裡的 A 與 AAAA 紀錄會一起換過去。
 
@@ -14,12 +14,12 @@ The container uses the host's default route. After the default gateway changes, 
 
 Each round does the following:
 
-1. 依序向 `api4.ipify.org`、`ipv4.icanhazip.com`、`v4.ident.me` 查詢 IPv4，並向 `api6.ipify.org`、`ipv6.icanhazip.com`、`v6.ident.me` 查詢 IPv6。  
-   Query IPv4 from `api4.ipify.org`, `ipv4.icanhazip.com`, and `v4.ident.me`, and IPv6 from `api6.ipify.org`, `ipv6.icanhazip.com`, and `v6.ident.me`, in that order.
-2. IPv4 略過私有位址、保留位址和 `100.64.0.0/10`。IPv6 略過本地、鏈路、文件、6to4、Teredo 這類不能公布的位址。某一邊查不到時，那一邊的紀錄保持原狀，另一邊照常更新。兩邊都失敗時，這一輪不改 DNS。  
-   For IPv4, skip private, reserved, and `100.64.0.0/10` addresses. For IPv6, skip addresses that must not be published, including local, link-local, documentation, 6to4, and Teredo. If one family cannot be read, leave that family's records unchanged and still update the other. If both fail, leave DNS unchanged for this round.
-3. 把 `A_RECORDS` 裡的每個名稱的 A 紀錄設成這個 IPv4，AAAA 紀錄設成這個 IPv6。紀錄維持灰雲（不經過 Cloudflare 代理）。  
-   Set the A record of every name in `A_RECORDS` to this IPv4, and the AAAA record to this IPv6. Records stay DNS-only (not proxied by Cloudflare).
+1. 依 `RECORD_TYPES` 查詢。含 A 時向 `api4.ipify.org`、`ipv4.icanhazip.com`、`v4.ident.me` 查 IPv4；含 AAAA 時向 `api6.ipify.org`、`ipv6.icanhazip.com`、`v6.ident.me` 查 IPv6。沒選到的類型不會查。  
+   Follow `RECORD_TYPES`. When it includes A, query IPv4 from `api4.ipify.org`, `ipv4.icanhazip.com`, and `v4.ident.me`. When it includes AAAA, query IPv6 from `api6.ipify.org`, `ipv6.icanhazip.com`, and `v6.ident.me`. A type that is not selected is not queried.
+2. IPv4 略過私有位址、保留位址和 `100.64.0.0/10`。IPv6 略過本地、鏈路、文件、6to4、Teredo 這類不能公布的位址。選中的某一邊查不到時，那一邊的紀錄保持原狀，另一邊照常更新。選中的類型全部失敗時，這一輪不改 DNS。  
+   For IPv4, skip private, reserved, and `100.64.0.0/10` addresses. For IPv6, skip addresses that must not be published, including local, link-local, documentation, 6to4, and Teredo. If one selected family cannot be read, leave that family's records unchanged and still update the other. If every selected type fails, leave DNS unchanged for this round.
+3. 把 `A_RECORDS` 裡的每個名稱，設成這次查到的位址。只寫入 `RECORD_TYPES` 選中的類型。紀錄維持灰雲（不經過 Cloudflare 代理）。  
+   Set every name in `A_RECORDS` to the addresses found this round. Only the types selected in `RECORD_TYPES` are written. Records stay DNS-only (not proxied by Cloudflare).
 4. 同一個名稱若是 CNAME，會刪掉並改成位址紀錄。同一類型若有多筆，保留一筆並刪除其餘。A 與 AAAA 互不覆蓋。  
    If the name is a CNAME, delete it and replace it with an address record. If several records of the same type exist, keep one and delete the rest. A and AAAA records do not replace each other.
 5. 只有位址本身改變時才發送 Apprise。只調整 TTL、或位址沒有變，都不發通知。同一輪裡 A 與 AAAA 的變更會合成一則通知。  
@@ -90,7 +90,8 @@ Variables are set in the compose file's `environment`. Each compose file has its
 | --- | --- | --- | --- |
 | `CLOUDFLARE_API_TOKEN` | 是 / yes |  | Cloudflare API token |
 | `DOMAIN` | 是 / yes |  | Zone 的網域，例如 `example.com`。<br>Zone domain, for example `example.com`. |
-| `A_RECORDS` | 否 / no | `DOMAIN` 的值 / the value of `DOMAIN` | 要更新的名稱，逗號分隔。每個名稱都會更新 A 與 AAAA。<br>Names to update, separated by commas. Each name gets both an A and an AAAA record. |
+| `A_RECORDS` | 否 / no | `DOMAIN` 的值 / the value of `DOMAIN` | 要更新的名稱，逗號分隔。<br>Names to update, separated by commas. |
+| `RECORD_TYPES` | 否 / no | `A,AAAA` | `A`、`AAAA`，或 `A,AAAA`。<br>`A`, `AAAA`, or `A,AAAA`. |
 | `CLOUDFLARE_ZONE_ID` | 否 / no | 自動查詢 / looked up | 已知 zone ID 時可填，省去列出 zone 的權限。<br>Set a known zone ID to skip permission to list zones. |
 | `INTERVAL_SECONDS` | 否 / no | `30` | 每輪間隔，必須是正整數。<br>Seconds between rounds. Must be a positive integer. |
 | `DNS_TTL` | 否 / no | `60` | A 與 AAAA 紀錄的 TTL（秒）。Zone 不接受時會改用 Cloudflare 自動 TTL。<br>TTL in seconds for A and AAAA records. If the zone rejects it, Cloudflare automatic TTL is used instead. |
@@ -120,9 +121,9 @@ environment:
   A_RECORDS: "@,nas,vpn.example.com"
 ```
 
-清單中的每個名稱都會設成同一個目前公網 IPv4 與 IPv6。這個程式不讀取路由器的各別對外介面。
+清單中的每個名稱都會設成同一個目前公網位址，實際寫入的類型由 `RECORD_TYPES` 決定。這個程式不讀取路由器的各別對外介面。
 
-Every name in the list is set to the same current public IPv4 and IPv6. This program does not read individual router interfaces.
+Every name in the list is set to the same current public address. `RECORD_TYPES` decides which record types are written. This program does not read individual router interfaces.
 
 ### Apprise
 

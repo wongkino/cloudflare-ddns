@@ -2,9 +2,10 @@
 """Point configured names at this host's current public IPv4 and IPv6.
 
 The host's default route is the active WAN. When that path fails over, the
-next check sees the new address and updates every name in A_RECORDS. A
-records follow the public IPv4, and AAAA records follow the public IPv6.
-A family is left unchanged when that public address cannot be read.
+next check sees the new address and updates every name in A_RECORDS.
+RECORD_TYPES chooses A, AAAA, or both. A records follow the public IPv4, and
+AAAA records follow the public IPv6. A selected family is left unchanged when
+that public address cannot be read.
 """
 
 import errno
@@ -169,6 +170,24 @@ def record_names(raw, domain):
     if not names:
         raise SystemExit("A_RECORDS 至少要有一個名稱")
     return names
+
+
+def record_types(raw):
+    text = (raw or "").strip()
+    if not text:
+        return ["A", "AAAA"]
+    selected = []
+    for part in text.replace("，", ",").split(","):
+        kind = part.strip().upper()
+        if not kind:
+            continue
+        if kind not in {"A", "AAAA"}:
+            raise SystemExit("RECORD_TYPES 只能是 A、AAAA，或 A,AAAA")
+        if kind not in selected:
+            selected.append(kind)
+    if not selected:
+        raise SystemExit("RECORD_TYPES 至少要有 A 或 AAAA")
+    return [kind for kind in ("A", "AAAA") if kind in selected]
 
 
 def is_public_ipv4(value):
@@ -405,26 +424,29 @@ def lookup_family(family, record_type, func):
     return address
 
 
-def sync_once(cloudflare, names, urls, dry_run):
-    ipv4 = lookup_family("IPv4", "A", public_ipv4)
-    ipv6 = lookup_family("IPv6", "AAAA", public_ipv6)
-    if ipv4 is None and ipv6 is None:
-        raise RuntimeError("查不到公網 IPv4 或 IPv6")
+def sync_once(cloudflare, names, urls, dry_run, types):
+    families = {"A": ("IPv4", public_ipv4), "AAAA": ("IPv6", public_ipv6)}
+    found = {}
+    for kind in types:
+        family, func = families[kind]
+        found[kind] = lookup_family(family, kind, func)
+    if all(found[kind] is None for kind in types):
+        labels = " 或 ".join("IPv4" if kind == "A" else "IPv6" for kind in types)
+        raise RuntimeError(f"查不到公網 {labels}")
     cloudflare.resolve_zone()
     records = cloudflare.list_records()
     changes = []
     for name in names:
-        if ipv4 is not None:
-            change = cloudflare.ensure_record(records, name, ipv4, "A")
-            if change:
-                changes.append(change)
-        if ipv6 is not None:
-            change = cloudflare.ensure_record(records, name, ipv6, "AAAA")
+        for kind in types:
+            address = found[kind]
+            if address is None:
+                continue
+            change = cloudflare.ensure_record(records, name, address, kind)
             if change:
                 changes.append(change)
     if not changes:
         return
-    title, body = notice_text(ipv4, ipv6, changes)
+    title, body = notice_text(found.get("A"), found.get("AAAA"), changes)
     if dry_run:
         log(f"演練不會發送通知：{title} {body.replace(chr(10), '；')}")
         return
@@ -462,6 +484,16 @@ def self_test():
     assert unreachable(OSError(errno.ENETUNREACH, "network unreachable"))
     assert unreachable(urllib.error.URLError(OSError(errno.ENETUNREACH, "network is unreachable")))
     assert not unreachable(TimeoutError("timed out"))
+    assert record_types("") == ["A", "AAAA"]
+    assert record_types("a") == ["A"]
+    assert record_types("aaaa") == ["AAAA"]
+    assert record_types("AAAA, A") == ["A", "AAAA"]
+    try:
+        record_types("CNAME")
+    except SystemExit:
+        pass
+    else:
+        raise AssertionError("其他紀錄類型應被拒絕")
     assert record_names("@, vpn ,wongkino.com", "wongkino.com") == [
         "wongkino.com",
         "vpn.wongkino.com",
@@ -568,6 +600,7 @@ def main():
     signal.signal(signal.SIGINT, handle_stop)
     domain = required("DOMAIN").rstrip(".").lower()
     names = record_names(os.environ.get("A_RECORDS", domain), domain)
+    types = record_types(os.environ.get("RECORD_TYPES", ""))
     interval = env_int("INTERVAL_SECONDS", 30)
     dry_run = os.environ.get("DRY_RUN", "").strip().lower() in {"1", "true", "yes"}
     urls = apprise_urls(os.environ.get("APPRISE_URLS", ""))
@@ -579,7 +612,7 @@ def main():
         dry_run,
     )
     log(
-        f"開始監視 {', '.join(names)} 的 A 與 AAAA，每 {interval} 秒檢查一次"
+        f"開始監視 {', '.join(names)} 的 {' 與 '.join(types)}，每 {interval} 秒檢查一次"
         + ("（演練，不會改 DNS）" if dry_run else "")
     )
     if urls:
@@ -589,7 +622,7 @@ def main():
     while not STOP:
         started = time.time()
         try:
-            sync_once(cloudflare, names, urls, dry_run)
+            sync_once(cloudflare, names, urls, dry_run, types)
             with open("/tmp/healthy", "w", encoding="utf-8") as handle:
                 handle.write(str(started))
         except Exception as error:

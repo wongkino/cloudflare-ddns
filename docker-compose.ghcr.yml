@@ -8,9 +8,11 @@ services:
       CLOUDFLARE_API_TOKEN: ""
       CLOUDFLARE_ZONE_ID: ""
       DOMAIN: example.com
-      # 逗號分隔。@ 代表根網域。每個名稱都會更新 A 與 AAAA。
-      # Comma-separated. @ is the zone apex. Each name gets both an A and an AAAA record.
+      # 逗號分隔。@ 代表根網域。
+      # Comma-separated. @ is the zone apex.
       A_RECORDS: "@"
+      # A、AAAA，或 A,AAAA。
+      RECORD_TYPES: "A,AAAA"
       INTERVAL_SECONDS: "30"
       DNS_TTL: "60"
       DRY_RUN: "false"
