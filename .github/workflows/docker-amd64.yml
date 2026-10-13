@@ -46,6 +46,7 @@ jobs:
           import os
           import re
           import urllib.error
+          import urllib.parse
           import urllib.request
 
           requested = os.environ.get("VERSION", "").strip()
@@ -64,12 +65,31 @@ jobs:
               emit(requested, f"使用指定版本 {requested}")
               raise SystemExit(0)
 
-          token = base64.b64encode(
+          basic = base64.b64encode(
               f"{os.environ['GH_ACTOR']}:{os.environ['GH_TOKEN']}".encode()
           ).decode()
+          query = urllib.parse.urlencode(
+              {
+                  "service": "ghcr.io",
+                  "scope": "repository:wongkino/cloudflare-ddns:pull",
+              }
+          )
+          token_request = urllib.request.Request(
+              f"https://ghcr.io/token?{query}",
+              headers={"Authorization": f"Basic {basic}"},
+          )
+          try:
+              with urllib.request.urlopen(token_request, timeout=30) as response:
+                  granted = json.load(response)
+          except urllib.error.HTTPError as error:
+              detail = error.read().decode()[:300]
+              raise SystemExit(f"取得 GHCR token 失敗 ({error.code}): {detail}")
+          access = granted.get("token") or granted.get("access_token")
+          if not access:
+              raise SystemExit("GHCR 沒有回傳 token")
           request = urllib.request.Request(
               "https://ghcr.io/v2/wongkino/cloudflare-ddns/tags/list?n=1000",
-              headers={"Authorization": f"Basic {token}"},
+              headers={"Authorization": f"Bearer {access}"},
           )
           try:
               with urllib.request.urlopen(request, timeout=30) as response:
