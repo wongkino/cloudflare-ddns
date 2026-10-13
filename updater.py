@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Point configured A records at this host's current public IPv4.
+"""Point configured names at this host's current public IPv4 and IPv6.
 
 The host's default route is the active WAN. When that path fails over, the
-next check sees the new address and updates every name in A_RECORDS. DNS is
-left unchanged when the public address cannot be read.
+next check sees the new address and updates every name in A_RECORDS. A
+records follow the public IPv4, and AAAA records follow the public IPv6.
+A family is left unchanged when that public address cannot be read.
 """
 
+import errno
 import ipaddress
 import json
 import os
@@ -20,12 +22,47 @@ from datetime import datetime
 
 CLOUDFLARE_CTX = ssl.create_default_context()
 STOP = False
-IP_SOURCES = (
+IPV4_SOURCES = (
     "https://api4.ipify.org",
     "https://ipv4.icanhazip.com",
     "https://v4.ident.me",
 )
+IPV6_SOURCES = (
+    "https://api6.ipify.org",
+    "https://ipv6.icanhazip.com",
+    "https://v6.ident.me",
+)
 CGNAT = ipaddress.ip_network("100.64.0.0/10")
+# Ranges that must not be published, including ones older Python builds
+# still treat as global.
+IPV6_BLOCKED = tuple(
+    ipaddress.ip_network(cidr)
+    for cidr in (
+        "::/128",
+        "::1/128",
+        "::ffff:0:0/96",
+        "64:ff9b::/96",
+        "64:ff9b:1::/48",
+        "100::/64",
+        "2001::/32",
+        "2001:2::/48",
+        "2001:10::/28",
+        "2001:20::/28",
+        "2001:db8::/32",
+        "2002::/16",
+        "3fff::/20",
+        "fc00::/7",
+        "fe80::/10",
+        "fec0::/10",
+        "ff00::/8",
+    )
+)
+UNREACHABLE = {
+    errno.ENETUNREACH,
+    errno.EHOSTUNREACH,
+    errno.EAFNOSUPPORT,
+    errno.EADDRNOTAVAIL,
+}
 
 
 def log(message):
@@ -66,12 +103,23 @@ def apprise_urls(raw):
     return urls
 
 
-def notice_text(address, changes):
-    lines = [f"Current public IP: {address}"]
+def notice_text(ipv4, ipv6, changes):
+    lines = []
+    if ipv4:
+        lines.append(f"Current public IPv4: {ipv4}")
+    if ipv6:
+        lines.append(f"Current public IPv6: {ipv6}")
     for change in changes:
         before = change["before"] or "(new record)"
-        lines.append(f"{change['name']}: {before} → {change['after']}")
+        lines.append(f"{change['name']} {change['type']}: {before} → {change['after']}")
     return "IP changed", "\n".join(lines)
+
+
+def same_ip(left, right):
+    try:
+        return ipaddress.ip_address(str(left).strip()) == ipaddress.ip_address(str(right).strip())
+    except ValueError:
+        return False
 
 
 def cname_target(records):
@@ -140,6 +188,45 @@ def is_public_ipv4(value):
     )
 
 
+def is_public_ipv6(value):
+    try:
+        address = ipaddress.ip_address(value.strip())
+    except ValueError:
+        return False
+    if address.version != 6 or address.ipv4_mapped is not None:
+        return False
+    if any(address in network for network in IPV6_BLOCKED):
+        return False
+    return (
+        not address.is_private
+        and not address.is_loopback
+        and not address.is_link_local
+        and not address.is_multicast
+        and not address.is_reserved
+        and not address.is_unspecified
+        and not address.is_site_local
+    )
+
+
+def unreachable(error):
+    current = error
+    seen = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, OSError) and current.errno in UNREACHABLE:
+            return True
+        current = getattr(current, "reason", None)
+    text = str(error).lower()
+    markers = (
+        "network is unreachable",
+        "network unreachable",
+        "no route to host",
+        "address family not supported",
+        "address family for hostname not supported",
+    )
+    return any(marker in text for marker in markers)
+
+
 def request_json(url, method="GET", payload=None, headers=None, timeout=20):
     data = None if payload is None else json.dumps(payload).encode()
     req = urllib.request.Request(url, data=data, headers=headers or {}, method=method)
@@ -156,20 +243,36 @@ def request_json(url, method="GET", payload=None, headers=None, timeout=20):
         return error.code, parsed
 
 
-def public_ipv4():
+def public_address(sources, accept, timeout):
     errors = []
-    for url in IP_SOURCES:
+    for url in sources:
         try:
             request = urllib.request.Request(url, headers={"User-Agent": "wongkino-apex-dns"})
-            with urllib.request.urlopen(request, context=CLOUDFLARE_CTX, timeout=10) as response:
+            with urllib.request.urlopen(request, context=CLOUDFLARE_CTX, timeout=timeout) as response:
                 body = response.read().decode().strip()
         except Exception as error:
             errors.append(f"{url}: {error}")
+            if unreachable(error):
+                break
             continue
-        if is_public_ipv4(body):
-            return body
-        errors.append(f"{url}: 回應不是公網 IPv4 ({body[:80]})")
-    raise RuntimeError("查不到公網 IPv4；" + "；".join(errors))
+        if accept(body):
+            return str(ipaddress.ip_address(body.strip()))
+        errors.append(f"{url}: 回應不是公網位址 ({body[:80]})")
+    raise RuntimeError("；".join(errors))
+
+
+def public_ipv4():
+    try:
+        return public_address(IPV4_SOURCES, is_public_ipv4, 10)
+    except RuntimeError as error:
+        raise RuntimeError(f"查不到公網 IPv4；{error}") from error
+
+
+def public_ipv6():
+    try:
+        return public_address(IPV6_SOURCES, is_public_ipv6, 5)
+    except RuntimeError as error:
+        raise RuntimeError(f"查不到公網 IPv6；{error}") from error
 
 
 class Cloudflare:
@@ -219,54 +322,72 @@ class Cloudflare:
                 return records
             page += 1
 
-    def ensure_a(self, records, name, ip):
+    def ensure_record(self, records, name, ip, record_type):
         owned = [record for record in records if record.get("name") == name]
-        for record in owned:
-            if record.get("type") == "CNAME":
-                self._delete(record)
-        addresses = [record for record in owned if record.get("type") == "A"]
-        if not addresses:
-            self._create(name, ip)
-            previous = cname_target(owned)
-            return {"name": name, "before": previous, "after": ip}
-        primary = addresses[0]
+        previous_cname = cname_target(owned)
+        for record in list(owned):
+            if record.get("type") != "CNAME":
+                continue
+            self._delete(record)
+            owned.remove(record)
+            if record in records:
+                records.remove(record)
+        matches = [record for record in owned if record.get("type") == record_type]
+        if not matches:
+            self._create(name, record_type, ip)
+            return {"name": name, "type": record_type, "before": previous_cname, "after": ip}
+        primary = matches[0]
         previous = primary.get("content")
-        if previous != ip or primary.get("proxied") or primary.get("ttl") != self.ttl:
-            self._patch(primary, name, ip)
+        if not same_ip(previous, ip) or primary.get("proxied") or primary.get("ttl") != self.ttl:
+            self._patch(primary, name, record_type, ip)
         else:
-            log(f"{name} 已是 {ip}")
-        for extra in addresses[1:]:
+            log(f"{name} {record_type} 已是 {ip}")
+        for extra in matches[1:]:
             self._delete(extra)
-        if previous != ip:
-            return {"name": name, "before": previous, "after": ip}
+            if extra in records:
+                records.remove(extra)
+        if not same_ip(previous, ip):
+            return {"name": name, "type": record_type, "before": previous, "after": ip}
         return None
 
-    def _payload(self, name, ip):
-        return {"type": "A", "name": name, "content": ip, "ttl": self.ttl, "proxied": False}
+    def _payload(self, name, record_type, ip):
+        return {
+            "type": record_type,
+            "name": name,
+            "content": ip,
+            "ttl": self.ttl,
+            "proxied": False,
+        }
 
-    def _write(self, method, path, name, ip):
+    def _write(self, method, path, name, record_type, ip):
         try:
-            self._call(path, method, self._payload(name, ip))
+            self._call(path, method, self._payload(name, record_type, ip))
         except RuntimeError as error:
             if self.ttl == 1 or "ttl" not in str(error).lower():
                 raise
             log("這個 zone 不接受指定的 TTL，改用 Cloudflare 自動 TTL")
             self.ttl = 1
-            self._call(path, method, self._payload(name, ip))
+            self._call(path, method, self._payload(name, record_type, ip))
 
-    def _create(self, name, ip):
-        log(f"新增 {name} A {ip}")
+    def _create(self, name, record_type, ip):
+        log(f"新增 {name} {record_type} {ip}")
         if not self.dry_run:
-            self._write("POST", f"/zones/{self.zone_id}/dns_records", name, ip)
+            self._write("POST", f"/zones/{self.zone_id}/dns_records", name, record_type, ip)
 
-    def _patch(self, record, name, ip):
+    def _patch(self, record, name, record_type, ip):
         previous = record.get("content")
-        if previous == ip:
-            log(f"更新 {name} 的 TTL 為 {self.ttl}")
+        if same_ip(previous, ip):
+            log(f"更新 {name} {record_type} 的 TTL 為 {self.ttl}")
         else:
-            log(f"更新 {name} {previous} -> {ip}")
+            log(f"更新 {name} {record_type} {previous} -> {ip}")
         if not self.dry_run:
-            self._write("PATCH", f"/zones/{self.zone_id}/dns_records/{record['id']}", name, ip)
+            self._write(
+                "PATCH",
+                f"/zones/{self.zone_id}/dns_records/{record['id']}",
+                name,
+                record_type,
+                ip,
+            )
 
     def _delete(self, record):
         log(f"刪除 {record.get('name')} {record.get('type')} {record.get('content')}")
@@ -274,19 +395,36 @@ class Cloudflare:
             self._call(f"/zones/{self.zone_id}/dns_records/{record['id']}", "DELETE")
 
 
+def lookup_family(family, record_type, func):
+    try:
+        address = func()
+    except RuntimeError as error:
+        log(f"{error}，{record_type} 紀錄維持原狀")
+        return None
+    log(f"目前公網 {family} {address}")
+    return address
+
+
 def sync_once(cloudflare, names, urls, dry_run):
-    address = public_ipv4()
-    log(f"目前公網 IP {address}")
+    ipv4 = lookup_family("IPv4", "A", public_ipv4)
+    ipv6 = lookup_family("IPv6", "AAAA", public_ipv6)
+    if ipv4 is None and ipv6 is None:
+        raise RuntimeError("查不到公網 IPv4 或 IPv6")
     cloudflare.resolve_zone()
     records = cloudflare.list_records()
     changes = []
     for name in names:
-        change = cloudflare.ensure_a(records, name, address)
-        if change:
-            changes.append(change)
+        if ipv4 is not None:
+            change = cloudflare.ensure_record(records, name, ipv4, "A")
+            if change:
+                changes.append(change)
+        if ipv6 is not None:
+            change = cloudflare.ensure_record(records, name, ipv6, "AAAA")
+            if change:
+                changes.append(change)
     if not changes:
         return
-    title, body = notice_text(address, changes)
+    title, body = notice_text(ipv4, ipv6, changes)
     if dry_run:
         log(f"演練不會發送通知：{title} {body.replace(chr(10), '；')}")
         return
@@ -308,6 +446,22 @@ def self_test():
     assert not is_public_ipv4("10.0.0.1")
     assert not is_public_ipv4("100.64.1.1")
     assert not is_public_ipv4("not-an-ip")
+    assert is_public_ipv6("2606:4700:4700::1111")
+    assert is_public_ipv6(" 2001:4860:4860::8888\n")
+    assert not is_public_ipv6("fe80::1")
+    assert not is_public_ipv6("fd12:3456:789a::1")
+    assert not is_public_ipv6("::1")
+    assert not is_public_ipv6("2001:db8::1")
+    assert not is_public_ipv6("2001:20::1")
+    assert not is_public_ipv6("2002:c000:201::")
+    assert not is_public_ipv6("::ffff:8.8.8.8")
+    assert not is_public_ipv6("1.2.3.4")
+    assert not is_public_ipv6("not-an-ip")
+    assert same_ip("2001:db8::1", "2001:0db8:0000::0001")
+    assert not same_ip("2001:db8::1", "2001:db8::2")
+    assert unreachable(OSError(errno.ENETUNREACH, "network unreachable"))
+    assert unreachable(urllib.error.URLError(OSError(errno.ENETUNREACH, "network is unreachable")))
+    assert not unreachable(TimeoutError("timed out"))
     assert record_names("@, vpn ,wongkino.com", "wongkino.com") == [
         "wongkino.com",
         "vpn.wongkino.com",
@@ -323,9 +477,86 @@ def self_test():
         "apprises://apprise.example.com/cloudflare"
     ]
     assert apprise_urls("") == []
-    title, body = notice_text("1.2.3.4", [{"name": "wan1.wongkino.com", "before": "9.9.9.9", "after": "1.2.3.4"}])
+    title, body = notice_text(
+        "1.2.3.4",
+        "2606:4700:4700::1111",
+        [
+            {"name": "wan1.wongkino.com", "type": "A", "before": "9.9.9.9", "after": "1.2.3.4"},
+            {
+                "name": "wan1.wongkino.com",
+                "type": "AAAA",
+                "before": "2001:db8::1",
+                "after": "2606:4700:4700::1111",
+            },
+        ],
+    )
     assert title == "IP changed"
-    assert "9.9.9.9 → 1.2.3.4" in body
+    assert "Current public IPv4: 1.2.3.4" in body
+    assert "Current public IPv6: 2606:4700:4700::1111" in body
+    assert "wan1.wongkino.com A: 9.9.9.9 → 1.2.3.4" in body
+    assert "wan1.wongkino.com AAAA: 2001:db8::1 → 2606:4700:4700::1111" in body
+    cloudflare = Cloudflare("token", "zone", "wongkino.com", 60, True)
+    records = [
+        {
+            "id": "1",
+            "name": "wan1.wongkino.com",
+            "type": "CNAME",
+            "content": "target.example",
+            "ttl": 60,
+            "proxied": False,
+        },
+        {
+            "id": "2",
+            "name": "nas.wongkino.com",
+            "type": "A",
+            "content": "1.1.1.1",
+            "ttl": 60,
+            "proxied": False,
+        },
+        {
+            "id": "3",
+            "name": "nas.wongkino.com",
+            "type": "AAAA",
+            "content": "2001:db8::1",
+            "ttl": 1,
+            "proxied": True,
+        },
+        {
+            "id": "4",
+            "name": "nas.wongkino.com",
+            "type": "AAAA",
+            "content": "2001:db8::2",
+            "ttl": 60,
+            "proxied": False,
+        },
+    ]
+    created = cloudflare.ensure_record(records, "wan1.wongkino.com", "203.0.113.5", "A")
+    assert created == {
+        "name": "wan1.wongkino.com",
+        "type": "A",
+        "before": "target.example",
+        "after": "203.0.113.5",
+    }
+    assert all(record.get("type") != "CNAME" for record in records)
+    created_aaaa = cloudflare.ensure_record(records, "wan1.wongkino.com", "2606:4700:4700::1111", "AAAA")
+    assert created_aaaa["before"] is None
+    assert created_aaaa["type"] == "AAAA"
+    assert cloudflare.ensure_record(records, "nas.wongkino.com", "1.1.1.1", "A") is None
+    updated = cloudflare.ensure_record(records, "nas.wongkino.com", "2606:4700:4700::1111", "AAAA")
+    assert updated["before"] == "2001:db8::1"
+    assert updated["after"] == "2606:4700:4700::1111"
+    assert [record["id"] for record in records if record.get("type") == "AAAA"] == ["3"]
+    same_form = [
+        {
+            "id": "5",
+            "name": "nas.wongkino.com",
+            "type": "AAAA",
+            "content": "2606:4700:4700:0000:0000:0000:0000:1111",
+            "ttl": 60,
+            "proxied": False,
+        }
+    ]
+    assert cloudflare.ensure_record(same_form, "nas.wongkino.com", "2606:4700:4700::1111", "AAAA") is None
     log("自我測試通過")
 
 
@@ -348,7 +579,7 @@ def main():
         dry_run,
     )
     log(
-        f"開始監視 {', '.join(names)}，每 {interval} 秒檢查一次"
+        f"開始監視 {', '.join(names)} 的 A 與 AAAA，每 {interval} 秒檢查一次"
         + ("（演練，不會改 DNS）" if dry_run else "")
     )
     if urls:
