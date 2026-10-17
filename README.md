@@ -44,9 +44,9 @@ If the lookup or the Cloudflare API fails, existing records stay as they are.
 
 ## 使用 GitHub 映像 / Use the GitHub image
 
-設定寫在 `docker-compose.ghcr.yml` 的 `environment`。映像是 `ghcr.io/wongkino/cloudflare-ddns:amd64`，每次啟動都會再拉一次。
+映像是 `ghcr.io/wongkino/cloudflare-ddns:amd64`，每次啟動都會再拉一次。下面兩種擇一，編輯那份 compose 的 `environment`。Token 寫在該檔裡。不要把填好的檔案提交進倉庫。
 
-Settings go in the `environment` section of `docker-compose.ghcr.yml`. The image is `ghcr.io/wongkino/cloudflare-ddns:amd64`, and it is pulled again on each start.
+The image is `ghcr.io/wongkino/cloudflare-ddns:amd64`, and it is pulled again on each start. Pick one of the two setups below and edit that compose file's `environment`. The token lives in that file. Do not commit the file after it contains a token.
 
 若映像不是公開的，先用有 `read:packages` 權限的 GitHub token 登入：
 
@@ -56,80 +56,110 @@ If the image is not public, log in first with a GitHub token that has `read:pack
 echo "$GITHUB_TOKEN" | docker login ghcr.io -u wongkino --password-stdin
 ```
 
-編輯 `environment` 後啟動：
+### 單一 zone / One zone
 
-Edit `environment`, then start:
+用 `docker-compose.yml`。64-bit Raspberry Pi 改用 `docker-compose.arm64.yml`，映像已是 `ghcr.io/wongkino/cloudflare-ddns:arm64`。
 
-```bash
-docker compose -f docker-compose.ghcr.yml up -d
-docker compose -f docker-compose.ghcr.yml logs -f
+Use `docker-compose.yml`. On a 64-bit Raspberry Pi, use `docker-compose.arm64.yml` instead. That file already uses `ghcr.io/wongkino/cloudflare-ddns:arm64`.
+
+只填一個 zone。`@` 是這個 zone 的根網域。也可以改成這個 zone 裡的完整名稱，例如 `wan1.example.com`。`A_RECORDS` 留空時，同樣更新根網域。
+
+Set one zone. `@` is that zone's apex. You can use a fully qualified name in that zone instead, for example `wan1.example.com`. An empty `A_RECORDS` updates the apex as well.
+
+```yaml
+DOMAIN: example.com
+A_RECORDS: "@"
 ```
 
-Token 寫在這份 compose 裡。不要把填好的檔案提交進倉庫。
+Token 需要能編輯這個 zone 的 DNS。沒有填 `CLOUDFLARE_ZONE_ID` 時，還要能列出 zone。
 
-The token lives in this compose file. Do not commit the file after it contains a token.
-
-## 本機建置 / Build locally
-
-`docker-compose.yml` 會在本機建置，設定同樣寫在它自己的 `environment`。
-
-`docker-compose.yml` builds locally. Its settings are in its own `environment` section.
+The token needs DNS edit permission on this zone. Without `CLOUDFLARE_ZONE_ID`, it must also be able to list zones.
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 docker compose logs -f
 ```
 
-這會用執行建置的那台機器的架構建立映像。
+64-bit Raspberry Pi：
 
-This builds an image for the architecture of the machine running the build.
+On a 64-bit Raspberry Pi:
+
+```bash
+docker compose -f docker-compose.arm64.yml up -d
+docker compose -f docker-compose.arm64.yml logs -f
+```
+
+### 多個指定 zone / Specific zones
+
+用 `docker-compose.multi.yml`。只更新 `DOMAIN` 列出的 zone，同一個帳號裡的其他 zone 不會動。64-bit Raspberry Pi 把該檔的 `image` 改成 `ghcr.io/wongkino/cloudflare-ddns:arm64`。
+
+Use `docker-compose.multi.yml`. Only the zones listed in `DOMAIN` are updated. Other zones in the same account are left alone. On a 64-bit Raspberry Pi, change that file's `image` to `ghcr.io/wongkino/cloudflare-ddns:arm64`.
+
+每個列出的 zone 都要有至少一個名稱，而且要寫完整名稱。`wan1.example.com` 只更新 `example.com`；`example.net` 更新該 zone 的根。不要用 `@` 或沒有點的名稱，例如 `nas`，那些會套到每一個列出的 zone。手填 `CLOUDFLARE_ZONE_ID` 時，順序和個數要和 `DOMAIN` 相同；留空則用網域名稱查詢。清單中的名稱都會設成同一個目前公網位址。這個程式不讀取路由器的各別對外介面。
+
+Every listed zone needs at least one fully qualified name. `wan1.example.com` updates only `example.com`. `example.net` updates that zone's apex. Do not use `@` or a name without a dot, such as `nas`; those are applied to every listed zone. When `CLOUDFLARE_ZONE_ID` is set, its order and count must match `DOMAIN`. Leave it empty to look zones up by name. Every selected name is set to the same current public address. This program does not read individual router interfaces.
+
+```yaml
+DOMAIN: example.com,example.net
+A_RECORDS: wan1.example.com,example.net
+```
+
+Token 需要能編輯這些 zone 的 DNS。沒有填 `CLOUDFLARE_ZONE_ID` 時，還要能列出 zone。
+
+The token needs DNS edit permission on these zones. Without `CLOUDFLARE_ZONE_ID`, it must also be able to list zones.
+
+```bash
+docker compose -f docker-compose.multi.yml up -d
+docker compose -f docker-compose.multi.yml logs -f
+```
+
+## 狀態頁 / Status page
+
+`WEB_UI` 預設關閉。設為 `true` 後，同一個程序會另開狀態頁。頁面內容就是這一個容器的 `DOMAIN`：用 `docker-compose.yml` 啟動時只顯示那一個 zone；用 `docker-compose.multi.yml` 啟動時顯示列出的每一個 zone。沒有切換。位址真的改變才寫入更換紀錄，最多保留 100 筆。演練不會寫入紀錄。
+
+`WEB_UI` is off by default. Set it to `true` and the same process also serves a status page. The page shows the `DOMAIN` of that container: `docker-compose.yml` shows its one zone, and `docker-compose.multi.yml` shows every zone it lists. There is no switch. A history entry is stored only when an address actually changes, up to 100 entries. A dry run does not store history.
+
+在使用中的 compose 加上連接埠，例如：
+
+Add a published port to the compose file you use, for example:
+
+```yaml
+ports:
+  - "8080:8080"
+environment:
+  WEB_UI: "true"
+  WEB_PORT: "8080"
+```
+
+然後打開 `http://127.0.0.1:8080`。本機只看版面、不連 Cloudflare 時，可以執行 `python3 -m web.dev_server`，它只用單一 zone 的範例，不是部署結果。
+
+Then open `http://127.0.0.1:8080`. To look at the layout on this machine without calling Cloudflare, run `python3 -m web.dev_server`. That preview uses a single-zone sample and is not a deployment.
 
 ## 設定 / Configuration
 
-變數寫在 compose 的 `environment`。兩份 compose 各自一份，改你實際啟動的那份。
+變數寫在你啟動的那份 compose 的 `environment`。
 
-Variables are set in the compose file's `environment`. Each compose file has its own copy; edit the one you start.
+Variables are set in the `environment` section of the compose file you start.
 
 | 變數 / Variable | 必填 / Required | 預設 / Default | 說明 / Description |
 | --- | --- | --- | --- |
 | `CLOUDFLARE_API_TOKEN` | 是 / yes |  | Cloudflare API token |
-| `DOMAIN` | 是 / yes |  | Zone 的網域，例如 `example.com`。<br>Zone domain, for example `example.com`. |
-| `A_RECORDS` | 否 / no | `DOMAIN` 的值 / the value of `DOMAIN` | 要更新的名稱，逗號分隔。<br>Names to update, separated by commas. |
+| `DOMAIN` | 是 / yes |  | 單一 zone 填一個網域。多個指定 zone 用逗號列出要更新的 zone。寫法見上面兩節。<br>One domain for a single zone. For specific zones, list them separated by commas. See the two sections above. |
+| `A_RECORDS` | 否 / no | 該 zone 的根網域 / that zone's apex | 要更新的名稱。單一 zone 可用 `@`。多個指定 zone 請寫完整名稱。見上面兩節。<br>Names to update. One zone may use `@`. Specific zones should use fully qualified names. See the two sections above. |
 | `RECORD_TYPES` | 否 / no | `A,AAAA` | `A`、`AAAA`，或 `A,AAAA`。<br>`A`, `AAAA`, or `A,AAAA`. |
-| `CLOUDFLARE_ZONE_ID` | 否 / no | 自動查詢 / looked up | 已知 zone ID 時可填，省去列出 zone 的權限。<br>Set a known zone ID to skip permission to list zones. |
+| `CLOUDFLARE_ZONE_ID` | 否 / no | 自動查詢 / looked up | 已知 zone ID 時可填，順序和 `DOMAIN` 相同，省去列出 zone 的權限。<br>Known zone IDs in the same order as `DOMAIN`. Skips permission to list zones. |
 | `INTERVAL_SECONDS` | 否 / no | `30` | 每輪間隔，必須是正整數。<br>Seconds between rounds. Must be a positive integer. |
 | `RECHECK_SECONDS` | 否 / no | `3600` | 位址沒變時，最長隔多久仍對 Cloudflare 完整核對一次。<br>When addresses are unchanged, how often a full Cloudflare check still runs. |
 | `DNS_TTL` | 否 / no | `60` | A 與 AAAA 紀錄的 TTL（秒）。Zone 不接受時會改用 Cloudflare 自動 TTL。<br>TTL in seconds for A and AAAA records. If the zone rejects it, Cloudflare automatic TTL is used instead. |
 | `CF_PROXIED` | 否 / no | `false` | `true`、`1` 或 `yes` 時紀錄走橙雲。預設灰雲，直接公布這台機器的位址。<br>`true`, `1`, or `yes` proxies the records through Cloudflare. The default is DNS-only, publishing this host's address. |
 | `DRY_RUN` | 否 / no | `false` | `true`、`1` 或 `yes` 時只記錄會做的變更，不寫入 DNS、不發通知。<br>`true`, `1`, or `yes` logs the intended changes without writing DNS or sending notifications. |
 | `APPRISE_URLS` | 否 / no | 空 / empty | 通知網址，多個以空白分隔。<br>Notification URLs, separated by spaces. |
+| `WEB_UI` | 否 / no | `false` | `true` 時開啟狀態頁。<br>`true` serves the status page. |
+| `WEB_PORT` | 否 / no | `8080` | 狀態頁連接埠。<br>Port for the status page. |
 
 健康檢查要求大約 120 秒內至少成功完成一輪。`INTERVAL_SECONDS` 請維持在 90 秒以內。
 
 The health check expects a successful round within about 120 seconds. Keep `INTERVAL_SECONDS` under 90.
-
-### A_RECORDS
-
-名稱必須屬於 `DOMAIN`。
-
-Each name must belong to `DOMAIN`.
-
-- `@` 代表根網域。  
-  `@` is the zone apex.
-- 沒有點的名稱會補上 `DOMAIN`，例如 `nas` 變成 `nas.example.com`。  
-  A name without a dot is suffixed with `DOMAIN`. For example, `nas` becomes `nas.example.com`.
-- 也可以寫完整名稱，例如 `nas.example.com`。  
-  A fully qualified name is also accepted, for example `nas.example.com`.
-
-```yaml
-environment:
-  DOMAIN: example.com
-  A_RECORDS: "@,nas,vpn.example.com"
-```
-
-清單中的每個名稱都會設成同一個目前公網位址，實際寫入的類型由 `RECORD_TYPES` 決定。這個程式不讀取路由器的各別對外介面。
-
-Every name in the list is set to the same current public address. `RECORD_TYPES` decides which record types are written. This program does not read individual router interfaces.
 
 ### Apprise
 
@@ -185,24 +215,36 @@ ghcr.io/wongkino/cloudflare-ddns:arm64
 
 The same run also adds a commit tag prefixed with the architecture, plus a version tag. An `amd64` version looks like `1.1.0`, and an `arm64` version looks like `1.1.0-arm64`. Each architecture increments on its own. Each build also updates that architecture's latest tag: `latest` for `amd64`, and `latest-arm64` for `arm64`. An empty **Version** increments the patch number of that architecture's highest version, or starts at `1.0.0` when no version tag exists. Fill it in only to choose a version, for example `2.0.0`. Use `1.2`, `1.2.0`, `v1.2.0`, or the same form with a suffix such as `-rc1`.
 
-64-bit Raspberry Pi 用 `docker-compose.ghcr.arm64.yml`：
-
-On a 64-bit Raspberry Pi, use `docker-compose.ghcr.arm64.yml`:
-
-```bash
-docker compose -f docker-compose.ghcr.arm64.yml up -d
-```
-
 ## 常用指令 / Common commands
 
-GitHub 的 `amd64` 映像指令都要加上 `-f docker-compose.ghcr.yml`。64-bit Raspberry Pi 改用 `-f docker-compose.ghcr.arm64.yml`。本機建置則直接用 `docker compose`。
+單一 zone：
 
-For the GitHub `amd64` image, add `-f docker-compose.ghcr.yml`. On a 64-bit Raspberry Pi, use `-f docker-compose.ghcr.arm64.yml`. For a local build, use `docker compose` alone.
+One zone:
 
 ```bash
-docker compose -f docker-compose.ghcr.yml logs -f
-docker compose -f docker-compose.ghcr.yml restart
-docker compose -f docker-compose.ghcr.yml down
+docker compose logs -f
+docker compose restart
+docker compose down
+```
+
+64-bit Raspberry Pi 的單一 zone 換成 `docker-compose.arm64.yml`。
+
+For one zone on a 64-bit Raspberry Pi, use `docker-compose.arm64.yml`.
+
+```bash
+docker compose -f docker-compose.arm64.yml logs -f
+docker compose -f docker-compose.arm64.yml restart
+docker compose -f docker-compose.arm64.yml down
+```
+
+多個指定 zone：
+
+Specific zones:
+
+```bash
+docker compose -f docker-compose.multi.yml logs -f
+docker compose -f docker-compose.multi.yml restart
+docker compose -f docker-compose.multi.yml down
 ```
 
 容器名稱是 `cloudflare-ddns`。程序收到 `SIGTERM` 或 `SIGINT` 會在目前這一輪結束後停止。

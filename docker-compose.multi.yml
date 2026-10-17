@@ -1,0 +1,37 @@
+services:
+  cloudflare-ddns:
+    image: ghcr.io/wongkino/cloudflare-ddns:amd64
+    pull_policy: always
+    container_name: cloudflare-ddns
+    restart: unless-stopped
+    # 暴露狀態頁。取消註解，並把 WEB_UI 設為 true。
+    # Publish the status page. Uncomment this, and set WEB_UI to true.
+    # ports:
+    #   - "8080:8080"
+    environment:
+      # Token 權限：列出的 zone 需要 Zone / DNS / Edit，以及 Zone / Zone / Read。
+      # Token permissions: Zone / DNS / Edit and Zone / Zone / Read on the listed zones.
+      CLOUDFLARE_API_TOKEN: ""
+      # 只更新這裡列出的 zone，不會動帳號裡的其他 zone。
+      # Only the zones listed here are updated.
+      DOMAIN: example.com,example.net
+      # 完整名稱只更新所屬 zone。不要用 @ 或沒有點的名稱，那些會套到每一個 zone。
+      # Fully qualified names update only their own zone. Do not use @ or a name
+      # without a dot; those are applied to every zone.
+      A_RECORDS: wan1.example.com,example.net
+      # A、AAAA，或 A,AAAA。
+      RECORD_TYPES: "A,AAAA"
+      INTERVAL_SECONDS: "30"
+      RECHECK_SECONDS: "3600"
+      DNS_TTL: "60"
+      # true 為橙雲。預設灰雲。
+      # true proxies through Cloudflare. The default is DNS-only.
+      CF_PROXIED: "false"
+      DRY_RUN: "false"
+      # true 才開啟狀態頁。
+      # Set true to open the status page.
+      WEB_UI: "false"
+      WEB_PORT: "8080"
+      # 多個網址以空白分隔。可填 Apprise 網址，或 https://主機/notify/token。
+      # Separate multiple URLs with spaces. Use an Apprise URL, or https://host/notify/token.
+      APPRISE_URLS: ""

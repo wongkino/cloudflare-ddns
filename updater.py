@@ -163,25 +163,57 @@ def send_notice(urls, title, body):
         log("Apprise 通知發送失敗")
 
 
-def record_names(raw, domain):
-    names = []
-    for part in raw.replace("\n", ",").split(","):
+def domains(raw):
+    found = []
+    for part in raw.replace("，", ",").split(","):
         part = part.strip().rstrip(".").lower()
-        if not part:
+        if part and part not in found:
+            found.append(part)
+    if not found:
+        raise SystemExit("DOMAIN 至少要有一個網域")
+    return found
+
+
+def zone_ids(raw, count):
+    text = (raw or "").strip()
+    if not text:
+        return [""] * count
+    found = [part.strip() for part in text.replace("，", ",").split(",")]
+    if len(found) != count or any(not part for part in found):
+        raise SystemExit("CLOUDFLARE_ZONE_ID 必須和 DOMAIN 一一對應，或整段留空")
+    return found
+
+
+def record_names(raw, domain_list):
+    text = (raw or "").strip()
+    parts = ["@"] if not text else []
+    if text:
+        for part in text.replace("\n", ",").replace("，", ",").split(","):
+            part = part.strip().rstrip(".").lower()
+            if part and part not in parts:
+                parts.append(part)
+    grouped = {domain: [] for domain in domain_list}
+    for part in parts:
+        if part == "@" or "." not in part:
+            for domain in domain_list:
+                name = domain if part == "@" else f"{part}.{domain}"
+                if name not in grouped[domain]:
+                    grouped[domain].append(name)
             continue
-        if part == "@":
-            name = domain
-        elif "." not in part:
-            name = f"{part}.{domain}"
-        else:
-            name = part
-        if name != domain and not name.endswith("." + domain):
-            raise SystemExit(f"{name} 不在 {domain} 這個 zone")
-        if name not in names:
-            names.append(name)
-    if not names:
-        raise SystemExit("A_RECORDS 至少要有一個名稱")
-    return names
+        matched = [
+            domain
+            for domain in domain_list
+            if part == domain or part.endswith("." + domain)
+        ]
+        if not matched:
+            raise SystemExit(f"{part} 不在這些 zone：{', '.join(domain_list)}")
+        domain = max(matched, key=len)
+        if part not in grouped[domain]:
+            grouped[domain].append(part)
+    empty = [domain for domain, names in grouped.items() if not names]
+    if empty:
+        raise SystemExit(f"{', '.join(empty)} 沒有要更新的名稱")
+    return grouped
 
 
 def record_types(raw):
@@ -467,7 +499,23 @@ def addresses_match(found, applied, types):
     return True
 
 
-def sync_once(cloudflare, names, urls, dry_run, types, state, recheck_seconds):
+def publish_web(zones, types, found, changes, dry_run, proxied):
+    if not env_bool("WEB_UI"):
+        return
+    from web.snapshot import record
+
+    record(
+        zones,
+        types,
+        found,
+        changes,
+        dry_run,
+        proxied,
+        env_int("INTERVAL_SECONDS", 30),
+    )
+
+
+def sync_once(cloudflare, zones, urls, dry_run, types, state, recheck_seconds):
     families = {"A": ("IPv4", public_ipv4), "AAAA": ("IPv6", public_ipv6)}
     found = {}
     for kind in types:
@@ -477,30 +525,36 @@ def sync_once(cloudflare, names, urls, dry_run, types, state, recheck_seconds):
         labels = " 或 ".join("IPv4" if kind == "A" else "IPv6" for kind in types)
         raise RuntimeError(f"查不到公網 {labels}")
     now = time.time()
-    if (
+    skipped = (
         not dry_run
         and now - state["checked_at"] < recheck_seconds
         and addresses_match(found, state["applied"], types)
-    ):
-        log("位址沒有改變，本輪不查 Cloudflare")
-        return
-    cloudflare.resolve_zone()
-    records = cloudflare.list_records()
+    )
     changes = []
-    for name in names:
-        for kind in types:
-            address = found[kind]
-            if address is None:
-                continue
-            change = cloudflare.ensure_record(records, name, address, kind)
-            if change:
-                changes.append(change)
-    if not dry_run:
-        for kind in types:
-            if found[kind] is not None:
-                state["applied"][kind] = found[kind]
-        state["checked_at"] = now
-    if not changes:
+    if skipped:
+        log("位址沒有改變，本輪不查 Cloudflare")
+    else:
+        for zone in zones:
+            cloudflare.domain = zone["domain"]
+            cloudflare.zone_id = zone["zone_id"]
+            cloudflare.resolve_zone()
+            zone["zone_id"] = cloudflare.zone_id
+            records = cloudflare.list_records()
+            for name in zone["names"]:
+                for kind in types:
+                    address = found[kind]
+                    if address is None:
+                        continue
+                    change = cloudflare.ensure_record(records, name, address, kind)
+                    if change:
+                        changes.append(change)
+        if not dry_run:
+            for kind in types:
+                if found[kind] is not None:
+                    state["applied"][kind] = found[kind]
+            state["checked_at"] = now
+    publish_web(zones, types, found, changes, dry_run, cloudflare.proxied)
+    if skipped or not changes:
         return
     title, body = notice_text(found.get("A"), found.get("AAAA"), changes)
     if dry_run:
@@ -553,16 +607,37 @@ def self_test():
         pass
     else:
         raise AssertionError("其他紀錄類型應被拒絕")
-    assert record_names("@, vpn ,example.com", "example.com") == [
-        "example.com",
-        "vpn.example.com",
-    ]
+    assert record_names("@, vpn ,example.com", ["example.com"]) == {
+        "example.com": ["example.com", "vpn.example.com"],
+    }
+    assert record_names("@,nas", ["example.com", "example.net"]) == {
+        "example.com": ["example.com", "nas.example.com"],
+        "example.net": ["example.net", "nas.example.net"],
+    }
+    assert record_names("@,vpn.example.com", ["example.com", "example.net"]) == {
+        "example.com": ["example.com", "vpn.example.com"],
+        "example.net": ["example.net"],
+    }
+    assert zone_ids("", 2) == ["", ""]
+    assert zone_ids("a,b", 2) == ["a", "b"]
     try:
-        record_names("other.net", "example.com")
+        record_names("other.net", ["example.com"])
     except SystemExit:
         pass
     else:
         raise AssertionError("其他 zone 的名稱應被拒絕")
+    try:
+        record_names("vpn.example.com", ["example.com", "example.net"])
+    except SystemExit:
+        pass
+    else:
+        raise AssertionError("沒有名稱的 zone 應被拒絕")
+    try:
+        zone_ids("only-one", 2)
+    except SystemExit:
+        pass
+    else:
+        raise AssertionError("zone ID 數量不符應被拒絕")
     assert apprise_urls("discord://a/b tgram://c/d") == ["discord://a/b", "tgram://c/d"]
     assert apprise_urls("https://apprise.example.com/notify/cloudflare") == [
         "apprises://apprise.example.com/cloudflare"
@@ -725,6 +800,53 @@ def self_test():
         {"A": "1.2.3.4", "AAAA": "2001:db8::1"},
         ["A", "AAAA"],
     )
+    import tempfile
+
+    folder = tempfile.mkdtemp()
+    os.environ["WEB_DATA"] = os.path.join(folder, "status.json")
+    from web.snapshot import configure
+    from web.snapshot import load
+    from web.snapshot import record
+
+    configured = configure(
+        [
+            {"domain": "example.com", "names": ["wan1.example.com"]},
+            {"domain": "example.net", "names": ["example.net"]},
+        ],
+        ["A", "AAAA"],
+        False,
+        False,
+        30,
+    )
+    assert configured["view"] == "multi"
+    assert configured["updated_at"] is None
+    assert [zone["domain"] for zone in load()["zones"]] == ["example.com", "example.net"]
+
+    saved = record(
+        [{"domain": "example.com", "names": ["example.com"]}],
+        ["A"],
+        {"A": "203.0.113.10"},
+        [{"name": "example.com", "type": "A", "before": "203.0.113.9", "after": "203.0.113.10"}],
+        False,
+        False,
+        30,
+    )
+    assert saved["view"] == "single"
+    assert load()["history"][0]["after"] == "203.0.113.10"
+    record(
+        [
+            {"domain": "example.com", "names": ["wan1.example.com"]},
+            {"domain": "example.net", "names": ["example.net"]},
+        ],
+        ["A"],
+        {"A": "203.0.113.10"},
+        [{"name": "example.net", "type": "A", "before": None, "after": "203.0.113.10"}],
+        True,
+        False,
+        30,
+    )
+    assert load()["view"] == "multi"
+    assert len(load()["history"]) == 1
     log("自我測試通過")
 
 
@@ -734,8 +856,13 @@ def main():
         return
     signal.signal(signal.SIGTERM, handle_stop)
     signal.signal(signal.SIGINT, handle_stop)
-    domain = required("DOMAIN").rstrip(".").lower()
-    names = record_names(os.environ.get("A_RECORDS", domain), domain)
+    domain_list = domains(required("DOMAIN"))
+    names_by_domain = record_names(os.environ.get("A_RECORDS", ""), domain_list)
+    ids = zone_ids(os.environ.get("CLOUDFLARE_ZONE_ID", ""), len(domain_list))
+    zones = [
+        {"domain": domain, "zone_id": zone_id, "names": names_by_domain[domain]}
+        for domain, zone_id in zip(domain_list, ids)
+    ]
     types = record_types(os.environ.get("RECORD_TYPES", ""))
     interval = env_int("INTERVAL_SECONDS", 30)
     recheck = env_int("RECHECK_SECONDS", 3600)
@@ -744,14 +871,15 @@ def main():
     urls = apprise_urls(os.environ.get("APPRISE_URLS", ""))
     cloudflare = Cloudflare(
         required("CLOUDFLARE_API_TOKEN"),
-        os.environ.get("CLOUDFLARE_ZONE_ID", "").strip(),
-        domain,
+        "",
+        domain_list[0],
         env_int("DNS_TTL", 60),
         dry_run,
         proxied,
     )
+    watched = [f"{zone['domain']}（{', '.join(zone['names'])}）" for zone in zones]
     log(
-        f"開始監視 {', '.join(names)} 的 {' 與 '.join(types)}，每 {interval} 秒檢查一次"
+        f"開始監視 {'; '.join(watched)} 的 {' 與 '.join(types)}，每 {interval} 秒檢查一次"
         + ("，橙雲" if proxied else "，灰雲")
         + ("（演練，不會改 DNS）" if dry_run else "")
     )
@@ -759,11 +887,20 @@ def main():
         log(f"IP 改變時會經 Apprise 發送通知（{len(urls)} 個目的地）")
     else:
         log("未設定 APPRISE_URLS，IP 改變時不會發送通知")
+    if env_bool("WEB_UI"):
+        from web.server import start
+        from web.snapshot import configure
+        from web.snapshot import load
+
+        configure(zones, types, proxied, dry_run, interval)
+        port = env_int("WEB_PORT", 8080)
+        start(port, lambda _view: load())
+        log(f"狀態頁 http://0.0.0.0:{port}")
     state = {"applied": {}, "checked_at": 0.0}
     while not STOP:
         started = time.time()
         try:
-            sync_once(cloudflare, names, urls, dry_run, types, state, recheck)
+            sync_once(cloudflare, zones, urls, dry_run, types, state, recheck)
             with open("/tmp/healthy", "w", encoding="utf-8") as handle:
                 handle.write(str(started))
         except Exception as error:

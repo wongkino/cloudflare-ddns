@@ -1,0 +1,206 @@
+:root {
+  color-scheme: light;
+  --bg: #f5f5f7;
+  --surface: #ffffff;
+  --text: #1d1d1f;
+  --muted: #6e6e73;
+  --accent: #0071e3;
+  --ok: #248a3d;
+  --line: #d2d2d7;
+  --shadow: 0 8px 28px rgba(0, 0, 0, 0.04);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+main {
+  width: min(1040px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 36px 0 64px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+h2 {
+  margin: 28px 0 12px;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.live, .meta, .when, .empty {
+  color: var(--muted);
+}
+
+.lang {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface);
+  border-radius: 980px;
+  box-shadow: var(--shadow);
+}
+
+.lang button {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 980px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.lang button[aria-pressed="true"] {
+  background: var(--accent);
+  color: white;
+}
+
+.live {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 0;
+  font-size: 13px;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.dot.wait { background: var(--muted); }
+
+.metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.metrics:has(> :only-child) {
+  grid-template-columns: 1fr;
+}
+
+.card, .metric, .stack {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+}
+
+.metric { padding: 20px; }
+.metric span { display: block; color: var(--muted); font-size: 13px; }
+.metric strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  overflow-wrap: break-word;
+}
+
+.card { margin-top: 12px; padding: 8px 20px 8px; }
+.card header { padding: 12px 0; gap: 16px; }
+.card header .name {
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 700;
+  min-width: 0;
+}
+.card header .cloud {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.row, .change {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 48px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+
+.identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.name { font-weight: 500; overflow-wrap: break-word; }
+.kind {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 980px;
+  background: var(--bg);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.address, .change b { font-weight: 400; }
+.address { overflow-wrap: break-word; }
+
+.stack { padding: 4px 20px; }
+.stack .change:first-child { border-top: 0; }
+.change > div { min-width: 0; }
+.change p { margin: 4px 0 0; overflow-wrap: break-word; }
+.when { flex-shrink: 0; font-size: 13px; white-space: nowrap; }
+
+.empty { padding: 8px 0 16px; }
+
+@media (max-width: 720px) {
+  main {
+    width: auto;
+    padding:
+      max(20px, env(safe-area-inset-top))
+      max(16px, env(safe-area-inset-right))
+      calc(32px + env(safe-area-inset-bottom))
+      max(16px, env(safe-area-inset-left));
+  }
+  header.top { align-items: stretch; flex-direction: column; gap: 12px; }
+  header.top .lang { width: 100%; }
+  header.top .lang button { flex: 1; padding: 0 8px; }
+  .live { align-items: flex-start; line-height: 1.4; }
+  .checked { display: block; white-space: nowrap; }
+  .sep { display: none; }
+  .dot { margin-top: 5px; }
+  h2 { margin-top: 24px; }
+  .metrics { grid-template-columns: 1fr; gap: 12px; }
+  .metric { padding: 16px; }
+  .metric strong { font-size: 20px; line-height: 1.35; }
+  .card, .stack { padding-right: 16px; padding-left: 16px; }
+  .card header { align-items: flex-start; }
+  .card header .cloud { margin-top: 3px; }
+  .row, .change { align-items: stretch; flex-direction: column; gap: 4px; }
+  .identity { display: block; }
+  .identity .name { margin-right: 8px; }
+  .address { display: block; margin-top: 2px; font-size: 15px; line-height: 1.35; }
+  .change p { line-height: 1.4; }
+  .when { margin-top: 2px; }
+}

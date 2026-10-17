@@ -4,6 +4,7 @@ WORKDIR /app
 RUN pip install --no-cache-dir apprise==2.0.1 \
  && adduser -D -u 10001 app
 COPY updater.py .
+COPY web ./web
 USER app
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \

@@ -1,15 +1,21 @@
 services:
   cloudflare-ddns:
-    image: ghcr.io/wongkino/cloudflare-ddns:amd64
+    image: ghcr.io/wongkino/cloudflare-ddns:arm64
     pull_policy: always
     container_name: cloudflare-ddns
     restart: unless-stopped
+    # 暴露狀態頁。取消註解，並把 WEB_UI 設為 true。
+    # Publish the status page. Uncomment this, and set WEB_UI to true.
+    # ports:
+    #   - "8080:8080"
     environment:
       CLOUDFLARE_API_TOKEN: ""
       CLOUDFLARE_ZONE_ID: ""
+      # 單一 zone。多個 zone 用 docker-compose.multi.yml，並把 image 改成 arm64。
+      # One zone. For several zones, use docker-compose.multi.yml and set image to arm64.
       DOMAIN: example.com
-      # 逗號分隔。@ 代表根網域。
-      # Comma-separated. @ is the zone apex.
+      # @ 是這個 zone 的根網域。
+      # @ is this zone's apex.
       A_RECORDS: "@"
       # A、AAAA，或 A,AAAA。
       RECORD_TYPES: "A,AAAA"
@@ -20,6 +26,10 @@ services:
       # true proxies through Cloudflare. The default is DNS-only.
       CF_PROXIED: "false"
       DRY_RUN: "false"
+      # true 才開啟狀態頁。
+      # Set true to open the status page.
+      WEB_UI: "false"
+      WEB_PORT: "8080"
       # 多個網址以空白分隔。可填 Apprise 網址，或 https://主機/notify/token。
       # Separate multiple URLs with spaces. Use an Apprise URL, or https://host/notify/token.
       APPRISE_URLS: ""
