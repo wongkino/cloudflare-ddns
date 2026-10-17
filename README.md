@@ -25,6 +25,10 @@ Each round does the following:
 5. 只有位址本身改變時才發送 Apprise。只調整 TTL、或位址沒有變，都不發通知。同一輪裡 A 與 AAAA 的變更會合成一則通知。  
    Send Apprise only when an address itself changes. TTL-only edits and an unchanged address do not send a notification. A and AAAA changes in the same round are sent as one notification.
 
+位址與上次成功核對時相同時，這一輪不查 Cloudflare。最多每隔 `RECHECK_SECONDS`（預設一小時）仍會完整核對一次，所以在 Cloudflare 上手動改過的紀錄，最遲會在這個間隔內被改回。`DRY_RUN` 期間每輪都完整檢查。
+
+While the addresses match the last successful check, the round skips Cloudflare. A full check still runs at least once every `RECHECK_SECONDS` (one hour by default), so records edited by hand in Cloudflare are reverted within that interval. With `DRY_RUN` on, every round is a full check.
+
 查詢或 Cloudflare API 失敗時，既有紀錄保持原狀。
 
 If the lookup or the Cloudflare API fails, existing records stay as they are.
@@ -94,6 +98,7 @@ Variables are set in the compose file's `environment`. Each compose file has its
 | `RECORD_TYPES` | 否 / no | `A,AAAA` | `A`、`AAAA`，或 `A,AAAA`。<br>`A`, `AAAA`, or `A,AAAA`. |
 | `CLOUDFLARE_ZONE_ID` | 否 / no | 自動查詢 / looked up | 已知 zone ID 時可填，省去列出 zone 的權限。<br>Set a known zone ID to skip permission to list zones. |
 | `INTERVAL_SECONDS` | 否 / no | `30` | 每輪間隔，必須是正整數。<br>Seconds between rounds. Must be a positive integer. |
+| `RECHECK_SECONDS` | 否 / no | `3600` | 位址沒變時，最長隔多久仍對 Cloudflare 完整核對一次。<br>When addresses are unchanged, how often a full Cloudflare check still runs. |
 | `DNS_TTL` | 否 / no | `60` | A 與 AAAA 紀錄的 TTL（秒）。Zone 不接受時會改用 Cloudflare 自動 TTL。<br>TTL in seconds for A and AAAA records. If the zone rejects it, Cloudflare automatic TTL is used instead. |
 | `DRY_RUN` | 否 / no | `false` | `true`、`1` 或 `yes` 時只記錄會做的變更，不寫入 DNS、不發通知。<br>`true`, `1`, or `yes` logs the intended changes without writing DNS or sending notifications. |
 | `APPRISE_URLS` | 否 / no | 空 / empty | 通知網址，多個以空白分隔。<br>Notification URLs, separated by spaces. |
@@ -127,9 +132,18 @@ Every name in the list is set to the same current public address. `RECORD_TYPES`
 
 ### Apprise
 
-可填 Apprise 網址，或 Apprise API 的 HTTP 位址。後者會自動轉成 Apprise 能用的形式：
+`APPRISE_URLS` 直接使用 [Apprise](https://github.com/caronc/apprise/wiki) 自己的網址格式，例如 Gotify 的 `gotifys://`、Discord 的 `discord://`。每種服務的寫法不同，請到 Apprise wiki 選你的服務，照該頁的 URL 填進來。這個程式不會改寫這些網址。
 
-Use an Apprise URL, or the HTTP address of an Apprise API. The HTTP form is converted automatically:
+`APPRISE_URLS` takes [Apprise](https://github.com/caronc/apprise/wiki) URLs as-is, for example Gotify `gotifys://` or Discord `discord://`. Each service has its own syntax. Open the Apprise wiki, pick the service, and copy that page's URL. This program does not rewrite those URLs.
+
+```yaml
+environment:
+  APPRISE_URLS: gotifys://gotify.example.com/token
+```
+
+若通知是經過 Apprise API 伺服器送出，可填它的 HTTP 位址，程式會轉成 Apprise 能用的形式：
+
+To send through an Apprise API server, use its HTTP address. The program converts it:
 
 ```text
 https://apprise.example.com/notify/token
@@ -143,14 +157,9 @@ becomes:
 apprises://apprise.example.com/token
 ```
 
-```yaml
-environment:
-  APPRISE_URLS: https://apprise.example.com/notify/token
-```
+多個目的地以空白分隔，可以混用不同服務。有一個網址無法辨識時會略過它，其餘照常發送。
 
-多個目的地以空白分隔。各種網址格式見 [Apprise wiki](https://github.com/caronc/apprise/wiki)。
-
-Separate multiple destinations with spaces. URL formats are listed in the [Apprise wiki](https://github.com/caronc/apprise/wiki).
+Separate multiple destinations with spaces. Different services can be mixed. A URL Apprise does not recognize is skipped; the rest are still sent.
 
 位址改變時，通知以英文送出。標題是 `IP changed`。內容先寫目前查到的公網 IPv4 與 IPv6，再列出每個有變的紀錄、類型、舊位址和新位址；新紀錄顯示為 `(new record)`。
 
@@ -171,9 +180,9 @@ ghcr.io/wongkino/cloudflare-ddns:amd64
 ghcr.io/wongkino/cloudflare-ddns:arm64
 ```
 
-同一輪也會加上架構開頭的 commit 標籤，以及一個版本標籤。`amd64` 的版本像 `1.0.1`，`arm64` 的版本像 `1.0.1-arm64`，兩邊各自遞增。**Version** 留空時，會把該架構現有最大版本的 patch 加一；還沒有版本標籤時從 `1.0.0` 開始。只有要指定版本時才填，例如 `2.0.0`。格式須為 `1.2`、`1.2.0`、`v1.2.0`，或在後面加 `-rc1` 這類後綴。
+同一輪也會加上架構開頭的 commit 標籤，以及一個版本標籤。`amd64` 的版本像 `1.1.0`，`arm64` 的版本像 `1.1.0-arm64`，兩邊各自遞增。每次建置也會更新該架構的 latest：`amd64` 是 `latest`，`arm64` 是 `latest-arm64`。**Version** 留空時，會把該架構現有最大版本的 patch 加一；還沒有版本標籤時從 `1.0.0` 開始。只有要指定版本時才填，例如 `2.0.0`。格式須為 `1.2`、`1.2.0`、`v1.2.0`，或在後面加 `-rc1` 這類後綴。
 
-The same run also adds a commit tag prefixed with the architecture, plus a version tag. An `amd64` version looks like `1.0.1`, and an `arm64` version looks like `1.0.1-arm64`. Each architecture increments on its own. An empty **Version** increments the patch number of that architecture's highest version, or starts at `1.0.0` when no version tag exists. Fill it in only to choose a version, for example `2.0.0`. Use `1.2`, `1.2.0`, `v1.2.0`, or the same form with a suffix such as `-rc1`.
+The same run also adds a commit tag prefixed with the architecture, plus a version tag. An `amd64` version looks like `1.1.0`, and an `arm64` version looks like `1.1.0-arm64`. Each architecture increments on its own. Each build also updates that architecture's latest tag: `latest` for `amd64`, and `latest-arm64` for `arm64`. An empty **Version** increments the patch number of that architecture's highest version, or starts at `1.0.0` when no version tag exists. Fill it in only to choose a version, for example `2.0.0`. Use `1.2`, `1.2.0`, `v1.2.0`, or the same form with a suffix such as `-rc1`.
 
 64-bit Raspberry Pi 用 `docker-compose.ghcr.arm64.yml`：
 

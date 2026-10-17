@@ -266,7 +266,7 @@ def public_address(sources, accept, timeout):
     errors = []
     for url in sources:
         try:
-            request = urllib.request.Request(url, headers={"User-Agent": "wongkino-apex-dns"})
+            request = urllib.request.Request(url, headers={"User-Agent": "cloudflare-ddns"})
             with urllib.request.urlopen(request, context=CLOUDFLARE_CTX, timeout=timeout) as response:
                 body = response.read().decode().strip()
         except Exception as error:
@@ -355,13 +355,23 @@ class Cloudflare:
         if not matches:
             self._create(name, record_type, ip)
             return {"name": name, "type": record_type, "before": previous_cname, "after": ip}
-        primary = matches[0]
+
+        def keep_score(record):
+            if not same_ip(record.get("content"), ip):
+                return 0
+            if record.get("proxied") or record.get("ttl") != self.ttl:
+                return 1
+            return 2
+
+        primary = max(matches, key=keep_score)
         previous = primary.get("content")
         if not same_ip(previous, ip) or primary.get("proxied") or primary.get("ttl") != self.ttl:
             self._patch(primary, name, record_type, ip)
         else:
             log(f"{name} {record_type} 已是 {ip}")
-        for extra in matches[1:]:
+        for extra in matches:
+            if extra is primary:
+                continue
             self._delete(extra)
             if extra in records:
                 records.remove(extra)
@@ -424,7 +434,15 @@ def lookup_family(family, record_type, func):
     return address
 
 
-def sync_once(cloudflare, names, urls, dry_run, types):
+def addresses_match(found, applied, types):
+    for kind in types:
+        current = found.get(kind)
+        if current is None or not same_ip(applied.get(kind), current):
+            return False
+    return True
+
+
+def sync_once(cloudflare, names, urls, dry_run, types, state, recheck_seconds):
     families = {"A": ("IPv4", public_ipv4), "AAAA": ("IPv6", public_ipv6)}
     found = {}
     for kind in types:
@@ -433,6 +451,14 @@ def sync_once(cloudflare, names, urls, dry_run, types):
     if all(found[kind] is None for kind in types):
         labels = " 或 ".join("IPv4" if kind == "A" else "IPv6" for kind in types)
         raise RuntimeError(f"查不到公網 {labels}")
+    now = time.time()
+    if (
+        not dry_run
+        and now - state["checked_at"] < recheck_seconds
+        and addresses_match(found, state["applied"], types)
+    ):
+        log("位址沒有改變，本輪不查 Cloudflare")
+        return
     cloudflare.resolve_zone()
     records = cloudflare.list_records()
     changes = []
@@ -444,6 +470,11 @@ def sync_once(cloudflare, names, urls, dry_run, types):
             change = cloudflare.ensure_record(records, name, address, kind)
             if change:
                 changes.append(change)
+    if not dry_run:
+        for kind in types:
+            if found[kind] is not None:
+                state["applied"][kind] = found[kind]
+        state["checked_at"] = now
     if not changes:
         return
     title, body = notice_text(found.get("A"), found.get("AAAA"), changes)
@@ -494,12 +525,12 @@ def self_test():
         pass
     else:
         raise AssertionError("其他紀錄類型應被拒絕")
-    assert record_names("@, vpn ,wongkino.com", "wongkino.com") == [
-        "wongkino.com",
-        "vpn.wongkino.com",
+    assert record_names("@, vpn ,example.com", "example.com") == [
+        "example.com",
+        "vpn.example.com",
     ]
     try:
-        record_names("example.com", "wongkino.com")
+        record_names("other.net", "example.com")
     except SystemExit:
         pass
     else:
@@ -513,9 +544,9 @@ def self_test():
         "1.2.3.4",
         "2606:4700:4700::1111",
         [
-            {"name": "wan1.wongkino.com", "type": "A", "before": "9.9.9.9", "after": "1.2.3.4"},
+            {"name": "wan1.example.com", "type": "A", "before": "9.9.9.9", "after": "1.2.3.4"},
             {
-                "name": "wan1.wongkino.com",
+                "name": "wan1.example.com",
                 "type": "AAAA",
                 "before": "2001:db8::1",
                 "after": "2606:4700:4700::1111",
@@ -525,13 +556,13 @@ def self_test():
     assert title == "IP changed"
     assert "Current public IPv4: 1.2.3.4" in body
     assert "Current public IPv6: 2606:4700:4700::1111" in body
-    assert "wan1.wongkino.com A: 9.9.9.9 → 1.2.3.4" in body
-    assert "wan1.wongkino.com AAAA: 2001:db8::1 → 2606:4700:4700::1111" in body
-    cloudflare = Cloudflare("token", "zone", "wongkino.com", 60, True)
+    assert "wan1.example.com A: 9.9.9.9 → 1.2.3.4" in body
+    assert "wan1.example.com AAAA: 2001:db8::1 → 2606:4700:4700::1111" in body
+    cloudflare = Cloudflare("token", "zone", "example.com", 60, True)
     records = [
         {
             "id": "1",
-            "name": "wan1.wongkino.com",
+            "name": "wan1.example.com",
             "type": "CNAME",
             "content": "target.example",
             "ttl": 60,
@@ -539,7 +570,7 @@ def self_test():
         },
         {
             "id": "2",
-            "name": "nas.wongkino.com",
+            "name": "nas.example.com",
             "type": "A",
             "content": "1.1.1.1",
             "ttl": 60,
@@ -547,7 +578,7 @@ def self_test():
         },
         {
             "id": "3",
-            "name": "nas.wongkino.com",
+            "name": "nas.example.com",
             "type": "AAAA",
             "content": "2001:db8::1",
             "ttl": 1,
@@ -555,40 +586,92 @@ def self_test():
         },
         {
             "id": "4",
-            "name": "nas.wongkino.com",
+            "name": "nas.example.com",
             "type": "AAAA",
             "content": "2001:db8::2",
             "ttl": 60,
             "proxied": False,
         },
     ]
-    created = cloudflare.ensure_record(records, "wan1.wongkino.com", "203.0.113.5", "A")
+    created = cloudflare.ensure_record(records, "wan1.example.com", "203.0.113.5", "A")
     assert created == {
-        "name": "wan1.wongkino.com",
+        "name": "wan1.example.com",
         "type": "A",
         "before": "target.example",
         "after": "203.0.113.5",
     }
     assert all(record.get("type") != "CNAME" for record in records)
-    created_aaaa = cloudflare.ensure_record(records, "wan1.wongkino.com", "2606:4700:4700::1111", "AAAA")
+    created_aaaa = cloudflare.ensure_record(records, "wan1.example.com", "2606:4700:4700::1111", "AAAA")
     assert created_aaaa["before"] is None
     assert created_aaaa["type"] == "AAAA"
-    assert cloudflare.ensure_record(records, "nas.wongkino.com", "1.1.1.1", "A") is None
-    updated = cloudflare.ensure_record(records, "nas.wongkino.com", "2606:4700:4700::1111", "AAAA")
+    assert cloudflare.ensure_record(records, "nas.example.com", "1.1.1.1", "A") is None
+    updated = cloudflare.ensure_record(records, "nas.example.com", "2606:4700:4700::1111", "AAAA")
     assert updated["before"] == "2001:db8::1"
     assert updated["after"] == "2606:4700:4700::1111"
     assert [record["id"] for record in records if record.get("type") == "AAAA"] == ["3"]
     same_form = [
         {
             "id": "5",
-            "name": "nas.wongkino.com",
+            "name": "nas.example.com",
             "type": "AAAA",
             "content": "2606:4700:4700:0000:0000:0000:0000:1111",
             "ttl": 60,
             "proxied": False,
         }
     ]
-    assert cloudflare.ensure_record(same_form, "nas.wongkino.com", "2606:4700:4700::1111", "AAAA") is None
+    assert cloudflare.ensure_record(same_form, "nas.example.com", "2606:4700:4700::1111", "AAAA") is None
+    keep_match = [
+        {
+            "id": "6",
+            "name": "vpn.example.com",
+            "type": "AAAA",
+            "content": "2001:db8::9",
+            "ttl": 60,
+            "proxied": False,
+        },
+        {
+            "id": "7",
+            "name": "vpn.example.com",
+            "type": "AAAA",
+            "content": "2606:4700:4700::1111",
+            "ttl": 60,
+            "proxied": False,
+        },
+    ]
+    assert cloudflare.ensure_record(keep_match, "vpn.example.com", "2606:4700:4700::1111", "AAAA") is None
+    assert [record["id"] for record in keep_match] == ["7"]
+    fix_flags = [
+        {
+            "id": "8",
+            "name": "vpn2.example.com",
+            "type": "A",
+            "content": "9.9.9.9",
+            "ttl": 60,
+            "proxied": False,
+        },
+        {
+            "id": "9",
+            "name": "vpn2.example.com",
+            "type": "A",
+            "content": "203.0.113.5",
+            "ttl": 1,
+            "proxied": True,
+        },
+    ]
+    assert cloudflare.ensure_record(fix_flags, "vpn2.example.com", "203.0.113.5", "A") is None
+    assert [record["id"] for record in fix_flags] == ["9"]
+    assert addresses_match(
+        {"A": "1.2.3.4", "AAAA": "2606:4700:4700::1111"},
+        {"A": "1.2.3.4", "AAAA": "2606:4700:4700:0000:0000:0000:0000:1111"},
+        ["A", "AAAA"],
+    )
+    assert not addresses_match({"A": "1.2.3.4"}, {"A": "1.2.3.5"}, ["A"])
+    assert not addresses_match({"A": "1.2.3.4"}, {}, ["A"])
+    assert not addresses_match(
+        {"A": "1.2.3.4", "AAAA": None},
+        {"A": "1.2.3.4", "AAAA": "2001:db8::1"},
+        ["A", "AAAA"],
+    )
     log("自我測試通過")
 
 
@@ -602,6 +685,7 @@ def main():
     names = record_names(os.environ.get("A_RECORDS", domain), domain)
     types = record_types(os.environ.get("RECORD_TYPES", ""))
     interval = env_int("INTERVAL_SECONDS", 30)
+    recheck = env_int("RECHECK_SECONDS", 3600)
     dry_run = os.environ.get("DRY_RUN", "").strip().lower() in {"1", "true", "yes"}
     urls = apprise_urls(os.environ.get("APPRISE_URLS", ""))
     cloudflare = Cloudflare(
@@ -619,10 +703,11 @@ def main():
         log(f"IP 改變時會經 Apprise 發送通知（{len(urls)} 個目的地）")
     else:
         log("未設定 APPRISE_URLS，IP 改變時不會發送通知")
+    state = {"applied": {}, "checked_at": 0.0}
     while not STOP:
         started = time.time()
         try:
-            sync_once(cloudflare, names, urls, dry_run, types)
+            sync_once(cloudflare, names, urls, dry_run, types, state, recheck)
             with open("/tmp/healthy", "w", encoding="utf-8") as handle:
                 handle.write(str(started))
         except Exception as error:

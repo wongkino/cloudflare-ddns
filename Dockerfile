@@ -1,7 +1,7 @@
-FROM python:3.12-alpine
+FROM python:3.14.8-alpine
 
 WORKDIR /app
-RUN pip install --no-cache-dir apprise \
+RUN pip install --no-cache-dir apprise==2.0.1 \
  && adduser -D -u 10001 app
 COPY updater.py .
 USER app

@@ -14,6 +14,7 @@ services:
       # A、AAAA，或 A,AAAA。
       RECORD_TYPES: "A,AAAA"
       INTERVAL_SECONDS: "30"
+      RECHECK_SECONDS: "3600"
       DNS_TTL: "60"
       DRY_RUN: "false"
       # 多個網址以空白分隔。可填 Apprise 網址，或 https://主機/notify/token。

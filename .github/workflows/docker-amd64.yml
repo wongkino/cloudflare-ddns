@@ -142,6 +142,7 @@ jobs:
             type=raw,value=${{ inputs.platform }}
             type=sha,prefix=${{ inputs.platform }}-
             type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=${{ inputs.platform == 'amd64' && 'latest' || 'latest-arm64' }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
