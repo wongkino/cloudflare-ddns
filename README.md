@@ -20,8 +20,8 @@ Each round does the following:
    For IPv4, skip private, reserved, and `100.64.0.0/10` addresses. For IPv6, skip addresses that must not be published, including local, link-local, documentation, 6to4, and Teredo. If one selected family cannot be read, leave that family's records unchanged and still update the other. If every selected type fails, leave DNS unchanged for this round.
 3. 把 `A_RECORDS` 裡的每個名稱，設成這次查到的位址。只寫入 `RECORD_TYPES` 選中的類型。紀錄維持灰雲（不經過 Cloudflare 代理）。  
    Set every name in `A_RECORDS` to the addresses found this round. Only the types selected in `RECORD_TYPES` are written. Records stay DNS-only (not proxied by Cloudflare).
-4. 同一個名稱若是 CNAME，會刪掉並改成位址紀錄。同一類型若有多筆，保留一筆並刪除其餘。A 與 AAAA 互不覆蓋。  
-   If the name is a CNAME, delete it and replace it with an address record. If several records of the same type exist, keep one and delete the rest. A and AAAA records do not replace each other.
+4. 同一個名稱若是 CNAME，會刪掉並改成位址紀錄。同一類型若有多筆，優先保留已經指向目標位址的那筆，並刪除其餘。A 與 AAAA 互不覆蓋。  
+   If the name is a CNAME, delete it and replace it with an address record. If several records of the same type exist, keep the one that already points at the target address and delete the rest. A and AAAA records do not replace each other.
 5. 只有位址本身改變時才發送 Apprise。只調整 TTL、或位址沒有變，都不發通知。同一輪裡 A 與 AAAA 的變更會合成一則通知。  
    Send Apprise only when an address itself changes. TTL-only edits and an unchanged address do not send a notification. A and AAAA changes in the same round are sent as one notification.
 
