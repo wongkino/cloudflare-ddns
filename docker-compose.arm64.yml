@@ -4,10 +4,9 @@ services:
     pull_policy: always
     container_name: cloudflare-ddns
     restart: unless-stopped
-    # 暴露狀態頁。取消註解，並把 WEB_UI 設為 true。
-    # Publish the status page. Uncomment this, and set WEB_UI to true.
-    # ports:
-    #   - "8080:8080"
+    # 使用主機網路，容器才看得到這台機器的公網 IPv4 與 IPv6。
+    # Host networking, so the container sees this machine's public IPv4 and IPv6.
+    network_mode: host
     environment:
       CLOUDFLARE_API_TOKEN: ""
       CLOUDFLARE_ZONE_ID: ""
@@ -29,6 +28,9 @@ services:
       # true 才開啟狀態頁。
       # Set true to open the status page.
       WEB_UI: "false"
+      # 狀態頁走主機網路，不要另加 ports。WEB_UI 為 false 時這個連接埠不會開啟。
+      # The status page uses the host network; do not add ports.
+      # This port stays closed while WEB_UI is false.
       WEB_PORT: "8080"
       # 多個網址以空白分隔。可填 Apprise 網址，或 https://主機/notify/token。
       # Separate multiple URLs with spaces. Use an Apprise URL, or https://host/notify/token.

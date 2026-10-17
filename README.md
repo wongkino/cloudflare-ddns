@@ -35,8 +35,8 @@ If the lookup or the Cloudflare API fails, existing records stay as they are.
 
 ## 需求 / Requirements
 
-- 主機可以執行 Docker，而且預設路由就是要公布的那條對外線路。AAAA 還需要容器能連出 IPv6；查不到 IPv6 時不會改 AAAA。Linux 上若容器沒有 IPv6，可在實際使用的 compose 加上 `network_mode: host`。  
-  The host can run Docker, and its default route is the path whose address should be published. AAAA also needs IPv6 egress from the container; when IPv6 cannot be read, AAAA records are left unchanged. On Linux, add `network_mode: host` to the compose file you use if the container has no IPv6.
+- 主機可以執行 Docker，而且預設路由就是要公布的那條對外線路。compose 使用 `network_mode: host`，容器才看得到這台機器的公網 IPv4 與 IPv6。查不到 IPv6 時不會改 AAAA。  
+  The host can run Docker, and its default route is the path whose address should be published. The compose files set `network_mode: host` so the container sees this machine's public IPv4 and IPv6. When IPv6 cannot be read, AAAA records are left unchanged.
 - Cloudflare API token，權限為目標 zone 的 DNS 編輯。若沒有填 `CLOUDFLARE_ZONE_ID`，token 還需要能列出 zone。  
   A Cloudflare API token with DNS edit permission on the target zone. Without `CLOUDFLARE_ZONE_ID`, the token must also be able to list zones.
 - 要通知時，另備一個 Apprise 服務或 Apprise 網址。  
@@ -119,21 +119,13 @@ docker compose -f docker-compose.multi.yml logs -f
 
 `WEB_UI` is off by default. Set it to `true` and the same process also serves a status page. The page shows the `DOMAIN` of that container: `docker-compose.yml` shows its one zone, and `docker-compose.multi.yml` shows every zone it lists. There is no switch. A history entry is stored only when an address actually changes, up to 100 entries. A dry run does not store history.
 
-在使用中的 compose 加上連接埠，例如：
+狀態頁走主機網路，`WEB_PORT` 是 `8080`，不要另加 `ports`。`WEB_UI` 為 `false` 時這個連接埠不會開啟。設為 `true` 後打開 `http://127.0.0.1:8080`。要改連接埠時，改 compose 裡的 `WEB_PORT`。
 
-Add a published port to the compose file you use, for example:
+The status page uses the host network, and `WEB_PORT` is `8080`. Do not add `ports`. The port stays closed while `WEB_UI` is `false`. Set it to `true`, then open `http://127.0.0.1:8080`. To choose another port, change `WEB_PORT` in the compose file.
 
-```yaml
-ports:
-  - "8080:8080"
-environment:
-  WEB_UI: "true"
-  WEB_PORT: "8080"
-```
+本機只看版面、不連 Cloudflare 時，可以執行 `python3 -m web.dev_server`，它只用單一 zone 的範例，不是部署結果。
 
-然後打開 `http://127.0.0.1:8080`。本機只看版面、不連 Cloudflare 時，可以執行 `python3 -m web.dev_server`，它只用單一 zone 的範例，不是部署結果。
-
-Then open `http://127.0.0.1:8080`. To look at the layout on this machine without calling Cloudflare, run `python3 -m web.dev_server`. That preview uses a single-zone sample and is not a deployment.
+To look at the layout on this machine without calling Cloudflare, run `python3 -m web.dev_server`. That preview uses a single-zone sample and is not a deployment.
 
 ## 設定 / Configuration
 
