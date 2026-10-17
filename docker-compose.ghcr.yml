@@ -16,6 +16,9 @@ services:
       INTERVAL_SECONDS: "30"
       RECHECK_SECONDS: "3600"
       DNS_TTL: "60"
+      # true 為橙雲。預設灰雲。
+      # true proxies through Cloudflare. The default is DNS-only.
+      CF_PROXIED: "false"
       DRY_RUN: "false"
       # 多個網址以空白分隔。可填 Apprise 網址，或 https://主機/notify/token。
       # Separate multiple URLs with spaces. Use an Apprise URL, or https://host/notify/token.

@@ -58,9 +58,10 @@ IPV6_BLOCKED = tuple(
         "ff00::/8",
     )
 )
-UNREACHABLE = {
+# 整段網路或這個位址族不可用時才停止後續查詢站。
+# 單一主機不可達（EHOSTUNREACH）要改試下一個來源。
+FATAL_UNREACHABLE = {
     errno.ENETUNREACH,
-    errno.EHOSTUNREACH,
     errno.EAFNOSUPPORT,
     errno.EADDRNOTAVAIL,
 }
@@ -89,6 +90,17 @@ def required(name):
     if not value:
         raise SystemExit(f"缺少環境變數 {name}")
     return value
+
+
+def env_bool(name, default=False):
+    raw = os.environ.get(name, "").strip().lower()
+    if not raw:
+        return default
+    if raw in {"1", "true", "yes"}:
+        return True
+    if raw in {"0", "false", "no"}:
+        return False
+    raise SystemExit(f"{name} 只能是 true 或 false")
 
 
 def apprise_urls(raw):
@@ -232,16 +244,17 @@ def unreachable(error):
     seen = set()
     while current is not None and id(current) not in seen:
         seen.add(id(current))
-        if isinstance(current, OSError) and current.errno in UNREACHABLE:
+        if isinstance(current, OSError) and current.errno in FATAL_UNREACHABLE:
             return True
         current = getattr(current, "reason", None)
     text = str(error).lower()
     markers = (
         "network is unreachable",
         "network unreachable",
-        "no route to host",
         "address family not supported",
         "address family for hostname not supported",
+        "can't assign requested address",
+        "cannot assign requested address",
     )
     return any(marker in text for marker in markers)
 
@@ -295,12 +308,13 @@ def public_ipv6():
 
 
 class Cloudflare:
-    def __init__(self, token, zone_id, domain, ttl, dry_run):
+    def __init__(self, token, zone_id, domain, ttl, dry_run, proxied=False):
         self.token = token
         self.zone_id = zone_id
         self.domain = domain
         self.ttl = ttl
         self.dry_run = dry_run
+        self.proxied = proxied
         self.headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
@@ -359,13 +373,17 @@ class Cloudflare:
         def keep_score(record):
             if not same_ip(record.get("content"), ip):
                 return 0
-            if record.get("proxied") or record.get("ttl") != self.ttl:
+            if bool(record.get("proxied")) != self.proxied or record.get("ttl") != self.ttl:
                 return 1
             return 2
 
         primary = max(matches, key=keep_score)
         previous = primary.get("content")
-        if not same_ip(previous, ip) or primary.get("proxied") or primary.get("ttl") != self.ttl:
+        if (
+            not same_ip(previous, ip)
+            or bool(primary.get("proxied")) != self.proxied
+            or primary.get("ttl") != self.ttl
+        ):
             self._patch(primary, name, record_type, ip)
         else:
             log(f"{name} {record_type} 已是 {ip}")
@@ -385,7 +403,7 @@ class Cloudflare:
             "name": name,
             "content": ip,
             "ttl": self.ttl,
-            "proxied": False,
+            "proxied": self.proxied,
         }
 
     def _write(self, method, path, name, record_type, ip):
@@ -405,10 +423,17 @@ class Cloudflare:
 
     def _patch(self, record, name, record_type, ip):
         previous = record.get("content")
-        if same_ip(previous, ip):
-            log(f"更新 {name} {record_type} 的 TTL 為 {self.ttl}")
-        else:
+        proxy_changed = bool(record.get("proxied")) != self.proxied
+        if not same_ip(previous, ip):
             log(f"更新 {name} {record_type} {previous} -> {ip}")
+        elif proxy_changed and record.get("ttl") != self.ttl:
+            state = "橙雲" if self.proxied else "灰雲"
+            log(f"更新 {name} {record_type} 為{state}，TTL 為 {self.ttl}")
+        elif proxy_changed:
+            state = "橙雲" if self.proxied else "灰雲"
+            log(f"更新 {name} {record_type} 為{state}")
+        else:
+            log(f"更新 {name} {record_type} 的 TTL 為 {self.ttl}")
         if not self.dry_run:
             self._write(
                 "PATCH",
@@ -514,6 +539,9 @@ def self_test():
     assert not same_ip("2001:db8::1", "2001:db8::2")
     assert unreachable(OSError(errno.ENETUNREACH, "network unreachable"))
     assert unreachable(urllib.error.URLError(OSError(errno.ENETUNREACH, "network is unreachable")))
+    assert unreachable(OSError(errno.EAFNOSUPPORT, "address family not supported"))
+    assert unreachable(OSError(errno.EADDRNOTAVAIL, "can't assign requested address"))
+    assert not unreachable(OSError(errno.EHOSTUNREACH, "no route to host"))
     assert not unreachable(TimeoutError("timed out"))
     assert record_types("") == ["A", "AAAA"]
     assert record_types("a") == ["A"]
@@ -660,6 +688,31 @@ def self_test():
     ]
     assert cloudflare.ensure_record(fix_flags, "vpn2.example.com", "203.0.113.5", "A") is None
     assert [record["id"] for record in fix_flags] == ["9"]
+    orange = Cloudflare("token", "zone", "example.com", 60, True, proxied=True)
+    stay_orange = [
+        {
+            "id": "10",
+            "name": "www.example.com",
+            "type": "A",
+            "content": "203.0.113.5",
+            "ttl": 60,
+            "proxied": True,
+        }
+    ]
+    assert orange.ensure_record(stay_orange, "www.example.com", "203.0.113.5", "A") is None
+    assert stay_orange[0]["proxied"] is True
+    turn_orange = [
+        {
+            "id": "11",
+            "name": "www.example.com",
+            "type": "A",
+            "content": "203.0.113.5",
+            "ttl": 60,
+            "proxied": False,
+        }
+    ]
+    assert orange.ensure_record(turn_orange, "www.example.com", "203.0.113.5", "A") is None
+    assert [record["id"] for record in turn_orange] == ["11"]
     assert addresses_match(
         {"A": "1.2.3.4", "AAAA": "2606:4700:4700::1111"},
         {"A": "1.2.3.4", "AAAA": "2606:4700:4700:0000:0000:0000:0000:1111"},
@@ -686,7 +739,8 @@ def main():
     types = record_types(os.environ.get("RECORD_TYPES", ""))
     interval = env_int("INTERVAL_SECONDS", 30)
     recheck = env_int("RECHECK_SECONDS", 3600)
-    dry_run = os.environ.get("DRY_RUN", "").strip().lower() in {"1", "true", "yes"}
+    dry_run = env_bool("DRY_RUN")
+    proxied = env_bool("CF_PROXIED")
     urls = apprise_urls(os.environ.get("APPRISE_URLS", ""))
     cloudflare = Cloudflare(
         required("CLOUDFLARE_API_TOKEN"),
@@ -694,9 +748,11 @@ def main():
         domain,
         env_int("DNS_TTL", 60),
         dry_run,
+        proxied,
     )
     log(
         f"開始監視 {', '.join(names)} 的 {' 與 '.join(types)}，每 {interval} 秒檢查一次"
+        + ("，橙雲" if proxied else "，灰雲")
         + ("（演練，不會改 DNS）" if dry_run else "")
     )
     if urls:

@@ -14,12 +14,12 @@ The container uses the host's default route. After the default gateway changes, 
 
 Each round does the following:
 
-1. 依 `RECORD_TYPES` 查詢。含 A 時向 `api4.ipify.org`、`ipv4.icanhazip.com`、`v4.ident.me` 查 IPv4；含 AAAA 時向 `api6.ipify.org`、`ipv6.icanhazip.com`、`v6.ident.me` 查 IPv6。沒選到的類型不會查。  
-   Follow `RECORD_TYPES`. When it includes A, query IPv4 from `api4.ipify.org`, `ipv4.icanhazip.com`, and `v4.ident.me`. When it includes AAAA, query IPv6 from `api6.ipify.org`, `ipv6.icanhazip.com`, and `v6.ident.me`. A type that is not selected is not queried.
+1. 依 `RECORD_TYPES` 查詢。含 A 時向 `api4.ipify.org`、`ipv4.icanhazip.com`、`v4.ident.me` 查 IPv4；含 AAAA 時向 `api6.ipify.org`、`ipv6.icanhazip.com`、`v6.ident.me` 查 IPv6。沒選到的類型不會查。其中一個查詢站回「主機不可達」時，會改試下一個。整段網路沒有這個位址族的路由時才停止。  
+   Follow `RECORD_TYPES`. When it includes A, query IPv4 from `api4.ipify.org`, `ipv4.icanhazip.com`, and `v4.ident.me`. When it includes AAAA, query IPv6 from `api6.ipify.org`, `ipv6.icanhazip.com`, and `v6.ident.me`. A type that is not selected is not queried. If one source says the host is unreachable, the next source is tried. Lookup stops only when that address family has no route.
 2. IPv4 略過私有位址、保留位址和 `100.64.0.0/10`。IPv6 略過本地、鏈路、文件、6to4、Teredo 這類不能公布的位址。選中的某一邊查不到時，那一邊的紀錄保持原狀，另一邊照常更新。選中的類型全部失敗時，這一輪不改 DNS。  
    For IPv4, skip private, reserved, and `100.64.0.0/10` addresses. For IPv6, skip addresses that must not be published, including local, link-local, documentation, 6to4, and Teredo. If one selected family cannot be read, leave that family's records unchanged and still update the other. If every selected type fails, leave DNS unchanged for this round.
-3. 把 `A_RECORDS` 裡的每個名稱，設成這次查到的位址。只寫入 `RECORD_TYPES` 選中的類型。紀錄維持灰雲（不經過 Cloudflare 代理）。  
-   Set every name in `A_RECORDS` to the addresses found this round. Only the types selected in `RECORD_TYPES` are written. Records stay DNS-only (not proxied by Cloudflare).
+3. 把 `A_RECORDS` 裡的每個名稱，設成這次查到的位址。只寫入 `RECORD_TYPES` 選中的類型。`CF_PROXIED` 為 false 時維持灰雲；為 true 時改成橙雲，流量經過 Cloudflare 代理。  
+   Set every name in `A_RECORDS` to the addresses found this round. Only the types selected in `RECORD_TYPES` are written. With `CF_PROXIED` false, records stay DNS-only. With it true, they are proxied by Cloudflare.
 4. 同一個名稱若是 CNAME，會刪掉並改成位址紀錄。同一類型若有多筆，優先保留已經指向目標位址的那筆，並刪除其餘。A 與 AAAA 互不覆蓋。  
    If the name is a CNAME, delete it and replace it with an address record. If several records of the same type exist, keep the one that already points at the target address and delete the rest. A and AAAA records do not replace each other.
 5. 只有位址本身改變時才發送 Apprise。只調整 TTL、或位址沒有變，都不發通知。同一輪裡 A 與 AAAA 的變更會合成一則通知。  
@@ -100,6 +100,7 @@ Variables are set in the compose file's `environment`. Each compose file has its
 | `INTERVAL_SECONDS` | 否 / no | `30` | 每輪間隔，必須是正整數。<br>Seconds between rounds. Must be a positive integer. |
 | `RECHECK_SECONDS` | 否 / no | `3600` | 位址沒變時，最長隔多久仍對 Cloudflare 完整核對一次。<br>When addresses are unchanged, how often a full Cloudflare check still runs. |
 | `DNS_TTL` | 否 / no | `60` | A 與 AAAA 紀錄的 TTL（秒）。Zone 不接受時會改用 Cloudflare 自動 TTL。<br>TTL in seconds for A and AAAA records. If the zone rejects it, Cloudflare automatic TTL is used instead. |
+| `CF_PROXIED` | 否 / no | `false` | `true`、`1` 或 `yes` 時紀錄走橙雲。預設灰雲，直接公布這台機器的位址。<br>`true`, `1`, or `yes` proxies the records through Cloudflare. The default is DNS-only, publishing this host's address. |
 | `DRY_RUN` | 否 / no | `false` | `true`、`1` 或 `yes` 時只記錄會做的變更，不寫入 DNS、不發通知。<br>`true`, `1`, or `yes` logs the intended changes without writing DNS or sending notifications. |
 | `APPRISE_URLS` | 否 / no | 空 / empty | 通知網址，多個以空白分隔。<br>Notification URLs, separated by spaces. |
 
