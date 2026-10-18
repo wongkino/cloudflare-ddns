@@ -3,23 +3,295 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Cloudflare DDNS Updater Status Page</title>
-  <link rel="stylesheet" href="/styles.css?v=8">
+  <title>Cloudflare DDNS Status Page</title>
+  <style>
+    :root {
+      --ink: #1c1c1e;
+      --quiet: #3a3a3c;
+      --line: rgba(60, 60, 67, 0.22);
+      --amber: #9a3412;
+      --live: #248a3d;
+      --glass: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.46));
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang TC", "Noto Sans TC", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background: #071018;
+    }
+
+    .sky {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      overflow: hidden;
+      background:
+        radial-gradient(80% 55% at 8% 0%, rgba(255, 159, 10, 0.72), transparent 58%),
+        radial-gradient(46% 36% at 86% 12%, rgba(90, 200, 250, 0.38), transparent 70%),
+        radial-gradient(120% 70% at 70% 120%, #16325f 0%, transparent 60%),
+        linear-gradient(180deg, #243656 0%, #101a30 46%, #070d16 100%);
+    }
+
+    .glow {
+      position: absolute;
+      width: 46vw;
+      height: 46vw;
+      border-radius: 50%;
+      filter: blur(8px);
+      background: radial-gradient(circle, rgba(255, 186, 92, 0.45), transparent 68%);
+      top: -8vw;
+      left: -6vw;
+      animation: drift 28s ease-in-out infinite alternate;
+    }
+
+    main {
+      position: relative;
+      z-index: 1;
+      width: min(640px, 100%);
+      margin: 0 auto;
+      padding:
+        max(28px, env(safe-area-inset-top))
+        max(20px, env(safe-area-inset-right))
+        calc(48px + env(safe-area-inset-bottom))
+        max(20px, env(safe-area-inset-left));
+    }
+
+    .top {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 16ch;
+      color: #f5f5f7;
+      font-size: 34px;
+      font-weight: 700;
+      letter-spacing: -0.035em;
+      line-height: 1.05;
+      text-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+    }
+
+    h2 {
+      margin: 32px 6px 10px;
+      color: rgba(245, 245, 247, 0.92);
+      font-size: 22px;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+    }
+
+    .lang {
+      display: flex;
+      flex-shrink: 0;
+      gap: 2px;
+      padding: 3px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.28);
+      box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.45);
+      backdrop-filter: blur(18px) saturate(1.4);
+      -webkit-backdrop-filter: blur(18px) saturate(1.4);
+    }
+
+    .lang button {
+      min-height: 44px;
+      padding: 0 12px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: #f5f5f7;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 560;
+      cursor: pointer;
+    }
+
+    .lang button[aria-pressed="true"] {
+      background: rgba(255, 255, 255, 0.88);
+      color: var(--ink);
+    }
+
+    .lang button:focus-visible {
+      outline: 2px solid #f5f5f7;
+      outline-offset: 2px;
+    }
+
+    .glass {
+      position: relative;
+      overflow: hidden;
+      background: var(--glass);
+      border-radius: 28px;
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.75),
+        inset 0 0 0 0.5px rgba(255, 255, 255, 0.45);
+      backdrop-filter: blur(28px) saturate(1.7);
+      -webkit-backdrop-filter: blur(28px) saturate(1.7);
+    }
+
+    .glass::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.48), transparent 38%);
+      pointer-events: none;
+    }
+
+    .hero { margin-top: 28px; padding: 26px 24px 18px; }
+
+    .hero-kicker, .addr span, .facts dt, .when, .cloud, .empty {
+      color: var(--quiet);
+    }
+
+    .hero-kicker {
+      position: relative;
+      margin: 0;
+      font-size: 15px;
+    }
+
+    .addr { position: relative; margin: 8px 0 0; }
+
+    .addr strong, .delta b {
+      font-weight: 640;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.03em;
+      overflow-wrap: anywhere;
+    }
+
+    .addr strong {
+      display: block;
+      margin-top: 2px;
+      font-size: clamp(32px, 7vw, 44px);
+      line-height: 1.12;
+    }
+
+    .addr + .addr { margin-top: 16px; }
+    .addr + .addr strong { font-size: clamp(22px, 4.5vw, 28px); }
+
+    .pending { color: var(--quiet); font-size: 28px !important; }
+
+    .facts {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px 16px;
+      margin: 22px 0 0;
+      padding-top: 16px;
+      box-shadow: inset 0 0.5px 0 var(--line);
+    }
+
+    .facts div { min-width: 0; }
+    .facts dt { margin: 0; font-size: 13px; font-weight: 400; }
+    .facts dd {
+      margin: 3px 0 0;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    .mode { display: flex; align-items: center; gap: 8px; }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--live);
+      box-shadow: 0 0 0 4px rgba(36, 138, 61, 0.16);
+    }
+    .dot.wait { background: var(--quiet); box-shadow: none; }
+    .proxied { color: var(--amber); }
+
+    .sheet { margin-top: 12px; padding: 4px 18px; border-radius: 22px; }
+
+    .zone, .row, .change {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 48px;
+      padding: 12px 0;
+    }
+
+    .zone { align-items: flex-start; }
+    .zone h3 {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      overflow-wrap: anywhere;
+    }
+    .cloud { flex-shrink: 0; margin-top: 2px; font-size: 13px; }
+
+    .row + .row, .change + .change, .zone + .row, .zone + .change {
+      box-shadow: inset 0 0.5px 0 var(--line);
+    }
+
+    .identity { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+    .name { font-weight: 560; overflow-wrap: anywhere; }
+    .kind {
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.55);
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 650;
+      white-space: nowrap;
+    }
+    .address {
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+      overflow-wrap: anywhere;
+    }
+
+    .change { align-items: flex-start; flex-direction: column; gap: 4px; }
+    .delta { margin: 0; line-height: 1.4; overflow-wrap: anywhere; }
+    .when { font-size: 13px; }
+
+    .empty { position: relative; margin: 0; padding: 14px 0 16px; }
+
+    @keyframes drift {
+      from { transform: translate3d(0, 0, 0); }
+      to { transform: translate3d(8%, 6%, 0); }
+    }
+
+    @media (max-width: 640px) {
+      h1 { font-size: 30px; }
+      .top { align-items: flex-start; flex-direction: column; }
+      .facts { grid-template-columns: 1fr; }
+      .row { align-items: flex-start; flex-direction: column; }
+      .address { text-align: left; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .glow { animation: none; }
+    }
+  </style>
 </head>
 <body>
+  <div class="sky" aria-hidden="true"><i class="glow"></i></div>
   <main>
     <header class="top">
-      <div>
-        <h1>Cloudflare DDNS Updater Status Page</h1>
-      </div>
+      <h1>Cloudflare DDNS<br>Status Page</h1>
       <div class="lang" id="lang" role="group" aria-label="語言">
         <button type="button" data-lang="zh-Hant" aria-pressed="true">繁體</button>
         <button type="button" data-lang="zh-Hans" aria-pressed="false">简体</button>
         <button type="button" data-lang="en" aria-pressed="false">English</button>
       </div>
     </header>
-    <p class="live"><span class="dot" id="dot"></span><span id="live">讀取中</span></p>
-    <section class="metrics" id="metrics"></section>
+    <section class="hero glass" aria-labelledby="hero-kicker">
+      <p class="hero-kicker" id="hero-kicker">讀取中</p>
+      <div id="addresses"></div>
+      <dl class="facts">
+        <div><dt id="mode-label"></dt><dd class="mode"><i class="dot" id="dot"></i><span id="mode">讀取中</span></dd></div>
+        <div><dt id="cloud-label"></dt><dd id="cloud"></dd></div>
+        <div><dt id="checked-label"></dt><dd id="checked"></dd></div>
+      </dl>
+    </section>
     <section>
       <h2 id="records-title">監視中的紀錄</h2>
       <div id="zones"></div>
@@ -29,6 +301,190 @@
       <div id="history"></div>
     </section>
   </main>
-  <script src="/app.js?v=8"></script>
+  <script>
+    const COPY = {
+      "zh-Hant": {
+        group: "語言",
+        loading: "讀取中",
+        dryRun: "演練",
+        running: "運作中",
+        notStarted: "尚未開始",
+        proxied: "橙雲",
+        dnsOnly: "灰雲",
+        state: "狀況",
+        cloud: "雲朵",
+        checked: "上次核對",
+        now: "目前公網",
+        ipv4: "目前公網 IPv4",
+        ipv6: "目前公網 IPv6",
+        notChecked: "尚未核對",
+        records: "監視中的紀錄",
+        history: "更換紀錄",
+        newRecord: "新紀錄",
+        noAddress: "這個 zone 沒有可顯示的位址",
+        noZone: "尚未設定 zone",
+        noHistory: "還沒有更換紀錄",
+      },
+      "zh-Hans": {
+        group: "语言",
+        loading: "读取中",
+        dryRun: "演练",
+        running: "运行中",
+        notStarted: "尚未开始",
+        proxied: "橙云",
+        dnsOnly: "灰云",
+        state: "状况",
+        cloud: "云朵",
+        checked: "上次核对",
+        now: "当前公网",
+        ipv4: "当前公网 IPv4",
+        ipv6: "当前公网 IPv6",
+        notChecked: "尚未核对",
+        records: "监视中的记录",
+        history: "更换记录",
+        newRecord: "新记录",
+        noAddress: "这个 zone 没有可显示的地址",
+        noZone: "尚未设定 zone",
+        noHistory: "还没有更换记录",
+      },
+      en: {
+        group: "Language",
+        loading: "Loading",
+        dryRun: "Dry run",
+        running: "Running",
+        notStarted: "Not started",
+        proxied: "Proxied",
+        dnsOnly: "DNS only",
+        state: "Status",
+        cloud: "Cloud",
+        checked: "Last check",
+        now: "Public address",
+        ipv4: "Public IPv4",
+        ipv6: "Public IPv6",
+        notChecked: "Not checked yet",
+        records: "Watched records",
+        history: "Changes",
+        newRecord: "New record",
+        noAddress: "This zone has no address to show",
+        noZone: "No zone configured",
+        noHistory: "No changes yet",
+      },
+    };
+
+    const kicker = document.querySelector("#hero-kicker");
+    const addressesEl = document.querySelector("#addresses");
+    const dot = document.querySelector("#dot");
+    const modeEl = document.querySelector("#mode");
+    const cloudEl = document.querySelector("#cloud");
+    const checkedEl = document.querySelector("#checked");
+    const zonesEl = document.querySelector("#zones");
+    const historyEl = document.querySelector("#history");
+    const lang = document.querySelector("#lang");
+    let language = "zh-Hant";
+    let current = null;
+
+    function t(key) {
+      return COPY[language][key];
+    }
+
+    function text(value) {
+      return String(value ?? "");
+    }
+
+    function escapeHtml(value) {
+      return text(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function clock(value) {
+      if (!value) return t("notChecked");
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value;
+      const pad = (part) => String(part).padStart(2, "0");
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
+
+    function ip(value) {
+      return escapeHtml(value).replaceAll(":", ":<wbr>");
+    }
+
+    function before(value) {
+      return value ? ip(value) : escapeHtml(t("newRecord"));
+    }
+
+    function applyLanguage(next) {
+      language = COPY[next] ? next : "zh-Hant";
+      localStorage.setItem("cloudflare-ddns-lang", language);
+      document.documentElement.lang = language;
+      lang.setAttribute("aria-label", t("group"));
+      for (const button of lang.querySelectorAll("button")) {
+        button.setAttribute("aria-pressed", String(button.dataset.lang === language));
+      }
+      document.querySelector("#records-title").textContent = t("records");
+      document.querySelector("#history-title").textContent = t("history");
+      document.querySelector("#mode-label").textContent = t("state");
+      document.querySelector("#cloud-label").textContent = t("cloud");
+      document.querySelector("#checked-label").textContent = t("checked");
+      if (current) render(current);
+      else {
+        kicker.textContent = t("loading");
+        modeEl.textContent = t("loading");
+      }
+    }
+
+    function render(data) {
+      current = data;
+      const types = data.types && data.types.length ? data.types : ["A", "AAAA"];
+      const addresses = data.addresses || {};
+      const cloud = data.proxied ? t("proxied") : t("dnsOnly");
+      dot.classList.toggle("wait", !data.watching);
+      modeEl.textContent = data.dry_run ? t("dryRun") : data.watching ? t("running") : t("notStarted");
+      cloudEl.textContent = cloud;
+      cloudEl.classList.toggle("proxied", Boolean(data.proxied));
+      checkedEl.textContent = data.updated_at ? clock(data.updated_at) : t("notChecked");
+      kicker.textContent = types.length === 1 ? (types[0] === "A" ? t("ipv4") : t("ipv6")) : t("now");
+      addressesEl.innerHTML = types.map((kind) => {
+        const shown = addresses[kind] ? ip(addresses[kind]) : escapeHtml(t("notChecked"));
+        const pending = addresses[kind] ? "" : " pending";
+        const label = types.length === 1 ? "" : `<span>${escapeHtml(kind === "A" ? t("ipv4") : t("ipv6"))}</span>`;
+        return `<p class="addr">${label}<strong class="${pending.trim()}">${shown}</strong></p>`;
+      }).join("");
+      zonesEl.innerHTML = (data.zones || []).map((zone) => {
+        const rows = (zone.names || []).flatMap((name) => types.map((kind) => `
+          <div class="row">
+            <div class="identity"><span class="name">${escapeHtml(name)}</span><span class="kind">${kind}</span></div>
+            <span class="address">${addresses[kind] ? ip(addresses[kind]) : escapeHtml(t("notChecked"))}</span>
+          </div>`)).join("");
+        return `<section class="sheet glass"><header class="zone"><h3>${escapeHtml(zone.domain)}</h3><span class="cloud">${escapeHtml(cloud)}</span></header>${rows || `<p class="empty">${escapeHtml(t("noAddress"))}</p>`}</section>`;
+      }).join("") || `<p class="empty">${escapeHtml(t("noZone"))}</p>`;
+      const items = data.history || [];
+      historyEl.innerHTML = items.length
+        ? `<div class="sheet glass">${items.map((item) => `
+            <article class="change">
+              <div class="identity"><span class="name">${escapeHtml(item.name)}</span><span class="kind">${escapeHtml(item.type)}</span></div>
+              <p class="delta">${before(item.before)} → <b>${ip(item.after)}</b></p>
+              <time class="when">${escapeHtml(clock(item.at))}</time>
+            </article>`).join("")}</div>`
+        : `<p class="empty">${escapeHtml(t("noHistory"))}</p>`;
+    }
+
+    lang.addEventListener("click", (event) => {
+      const button = event.target.closest("button");
+      if (!button) return;
+      applyLanguage(button.dataset.lang);
+    });
+
+    async function load() {
+      const response = await fetch("/api/status", { cache: "no-store" });
+      render(await response.json());
+    }
+
+    applyLanguage(localStorage.getItem("cloudflare-ddns-lang") || "zh-Hant");
+    load();
+    setInterval(load, 5000);
+  </script>
 </body>
 </html>
