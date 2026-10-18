@@ -8,6 +8,19 @@ Periodically look up this host's current public IPv4 and IPv6, and point the con
 
 The container uses the host's default route. After the default gateway changes, the next check sees the new path's address and updates every A and AAAA record in the list.
 
+開啟狀態頁後，可以直接看到目前位址、正在監視的名稱，以及真正換過的位址。下面這張是單一 zone、只有 A 紀錄的範例，不是某一次部署。
+
+With the status page on, you can see the current address, the names being watched, and the addresses that actually changed. The picture is a sample of one zone with only an A record. It is not a deployment.
+
+![單一 zone 狀態頁。上方玻璃是目前公網 IPv4，中間是監視中的紀錄，下方是更換紀錄。](docs/status-single.png)
+
+- 最上面的玻璃是目前公網位址。這張圖只監視 A，所以只顯示 IPv4。
+- 同一塊玻璃下方是狀況：綠點表示運作中，中間是灰雲或橙雲，右邊是上次核對時間。
+- 「監視中的紀錄」是這個容器的 zone 和名稱，以及現在寫入的位址。
+- 「更換紀錄」只在位址真的改變時出現。箭頭左邊是舊位址，右邊是新位址。
+
+The top glass is the current public address. This picture watches A only, so it shows IPv4. Below that, the green dot means the updater is running, the middle shows DNS-only or proxied, and the right side is the last check. Watched records are this container's zone and names. A change appears only when an address itself changes: the old address, then the new one.
+
 ## 行為 / Behavior
 
 每一輪會做這些事：
@@ -115,17 +128,33 @@ docker compose -f docker-compose.multi.yml logs -f
 
 ## 狀態頁 / Status page
 
-`WEB_UI` 預設關閉。設為 `true` 後，同一個程序會另開狀態頁。頁面內容就是這一個容器的 `DOMAIN`：用 `docker-compose.yml` 啟動時只顯示那一個 zone；用 `docker-compose.multi.yml` 啟動時顯示列出的每一個 zone。沒有切換。位址真的改變才寫入更換紀錄，最多保留 100 筆。演練不會寫入紀錄。
+`WEB_UI` 預設關閉。設為 `true` 後，同一個程序在主機網路的 `WEB_PORT`（預設 `8080`）提供狀態頁。不要另加 `ports`。`WEB_UI` 為 `false` 時這個連接埠不會開啟。打開 `http://127.0.0.1:8080`。要改連接埠時，改 compose 裡的 `WEB_PORT`。
 
-`WEB_UI` is off by default. Set it to `true` and the same process also serves a status page. The page shows the `DOMAIN` of that container: `docker-compose.yml` shows its one zone, and `docker-compose.multi.yml` shows every zone it lists. There is no switch. A history entry is stored only when an address actually changes, up to 100 entries. A dry run does not store history.
+`WEB_UI` is off by default. Set it to `true` and the same process serves the page on the host network at `WEB_PORT` (8080 by default). Do not add `ports`. The port stays closed while `WEB_UI` is `false`. Open `http://127.0.0.1:8080`. To choose another port, change `WEB_PORT` in the compose file.
 
-狀態頁走主機網路，`WEB_PORT` 是 `8080`，不要另加 `ports`。`WEB_UI` 為 `false` 時這個連接埠不會開啟。設為 `true` 後打開 `http://127.0.0.1:8080`。要改連接埠時，改 compose 裡的 `WEB_PORT`。
+頁面內容就是這一個容器的 `DOMAIN`。用 `docker-compose.yml` 只顯示那一個 zone，見上方那張圖。用 `docker-compose.multi.yml` 顯示列出的每一個 zone，見下方。沒有切換。位址真的改變才寫入更換紀錄，最多 100 筆。演練不會寫入紀錄。右上角可切換繁體、简体、English。
 
-The status page uses the host network, and `WEB_PORT` is `8080`. Do not add `ports`. The port stays closed while `WEB_UI` is `false`. Set it to `true`, then open `http://127.0.0.1:8080`. To choose another port, change `WEB_PORT` in the compose file.
+The page shows the `DOMAIN` of that container. `docker-compose.yml` shows its one zone, as in the picture above. `docker-compose.multi.yml` shows every zone it lists, as below. There is no switch. A history entry is stored only when an address actually changes, up to 100 entries. A dry run does not store history. The control at the top right switches Traditional Chinese, Simplified Chinese, and English.
 
-本機只看版面、不連 Cloudflare 時，可以執行 `python3 -m web.dev_server`，它只用單一 zone 的範例，不是部署結果。
+### 多個指定 zone / Specific zones
 
-To look at the layout on this machine without calling Cloudflare, run `python3 -m web.dev_server`. That preview uses a single-zone sample and is not a deployment.
+![多個 zone 的狀態頁。上方同時有 IPv4 和 IPv6，每個 zone 各自一張玻璃，更換紀錄列在最下面。](docs/status-multi.png)
+
+同一個公網位址會寫到列出的每個名稱。A 和 AAAA 都在最上面。每個 zone 各自一張玻璃。更換紀錄把各名稱的變更加在一起。
+
+The same public address is written to every listed name. A and AAAA both appear at the top. Each zone has its own glass. The change list mixes updates from all of those names.
+
+### 手機 / Phone
+
+![手機上的單一 zone 狀態頁。語言按鈕在標題下面，狀況改成直排。](docs/status-phone.png)
+
+窄螢幕時標題和語言改成上下排列，狀況、名稱和位址改成直排，位址不會超出玻璃。
+
+On a narrow screen the title and language control stack, and the status, names, and addresses stack inside the glass.
+
+本機只看版面、不連 Cloudflare 時，可以執行 `python3 -m web.dev_server`。它只用單一 zone 的範例。
+
+To look at the layout on this machine without calling Cloudflare, run `python3 -m web.dev_server`. That preview uses a single-zone sample.
 
 ## 設定 / Configuration
 
