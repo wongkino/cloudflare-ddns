@@ -1,490 +1,668 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Cloudflare DDNS Status Page</title>
-  <style>
-    :root {
-      --ink: #1c1c1e;
-      --quiet: #3a3a3c;
-      --line: rgba(60, 60, 67, 0.22);
-      --amber: #9a3412;
-      --live: #248a3d;
-      --glass: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.46));
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang TC", "Noto Sans TC", sans-serif;
-    }
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cloudflare DDNS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f1f2f5;
+  --surface: #ffffff;
+  --ink: #1d1f2a;
+  --mute: #6b7280;
+  --line: #d9dde5;
+  --head: #e8eaef;
+  --orange: #F6821F;
+  --orange-soft: #fff1e3;
+  --grey-cloud: #6b7280;
+  --ok: #0e8a57;
+  font-family: Inter, "PingFang TC", "Noto Sans TC", system-ui, sans-serif;
+}
 
-    * { box-sizing: border-box; }
+* { box-sizing: border-box; }
 
-    body {
-      margin: 0;
-      min-height: 100vh;
-      color: var(--ink);
-      background: #071018;
-    }
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  background: var(--bg);
+}
 
-    .sky {
-      position: fixed;
-      inset: 0;
-      z-index: 0;
-      overflow: hidden;
-      background:
-        radial-gradient(80% 55% at 8% 0%, rgba(255, 159, 10, 0.72), transparent 58%),
-        radial-gradient(46% 36% at 86% 12%, rgba(90, 200, 250, 0.38), transparent 70%),
-        radial-gradient(120% 70% at 70% 120%, #16325f 0%, transparent 60%),
-        linear-gradient(180deg, #243656 0%, #101a30 46%, #070d16 100%);
-    }
+.signal {
+  height: 3px;
+  background: var(--orange);
+}
 
-    .glow {
-      position: absolute;
-      width: 46vw;
-      height: 46vw;
-      border-radius: 50%;
-      filter: blur(8px);
-      background: radial-gradient(circle, rgba(255, 186, 92, 0.45), transparent 68%);
-      top: -8vw;
-      left: -6vw;
-      animation: drift 28s ease-in-out infinite alternate;
-    }
+.topbar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
 
-    main {
-      position: relative;
-      z-index: 1;
-      width: min(640px, 100%);
-      margin: 0 auto;
-      padding:
-        max(28px, env(safe-area-inset-top))
-        max(20px, env(safe-area-inset-right))
-        calc(48px + env(safe-area-inset-bottom))
-        max(20px, env(safe-area-inset-left));
-    }
+.topbar-inner {
+  width: min(980px, 100%);
+  margin: 0 auto;
+  padding:
+    12px max(14px, env(safe-area-inset-right))
+    12px max(14px, env(safe-area-inset-left));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
 
-    .top {
-      display: flex;
-      align-items: flex-end;
-      justify-content: space-between;
-      gap: 20px;
-    }
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
 
-    h1 {
-      margin: 0;
-      max-width: 16ch;
-      color: #f5f5f7;
-      font-size: 34px;
-      font-weight: 700;
-      letter-spacing: -0.035em;
-      line-height: 1.05;
-      text-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
-    }
+.brand-sq {
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  background: var(--orange);
+  flex-shrink: 0;
+}
 
-    h2 {
-      margin: 32px 6px 10px;
-      color: rgba(245, 245, 247, 0.92);
-      font-size: 22px;
-      font-weight: 650;
-      letter-spacing: -0.02em;
-    }
+h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
 
-    .lang {
-      display: flex;
-      flex-shrink: 0;
-      gap: 2px;
-      padding: 3px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.28);
-      box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.45);
-      backdrop-filter: blur(18px) saturate(1.4);
-      -webkit-backdrop-filter: blur(18px) saturate(1.4);
-    }
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 0 9px;
+  border-radius: 4px;
+  background: var(--orange-soft);
+  color: var(--orange);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
 
-    .lang button {
-      min-height: 44px;
-      padding: 0 12px;
-      border: 0;
-      border-radius: 999px;
-      background: transparent;
-      color: #f5f5f7;
-      font: inherit;
-      font-size: 13px;
-      font-weight: 560;
-      cursor: pointer;
-    }
+.live.wait {
+  background: #eef0f3;
+  color: var(--mute);
+}
 
-    .lang button[aria-pressed="true"] {
-      background: rgba(255, 255, 255, 0.88);
-      color: var(--ink);
-    }
+.live .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
 
-    .lang button:focus-visible {
-      outline: 2px solid #f5f5f7;
-      outline-offset: 2px;
-    }
+.lang {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+}
 
-    .glass {
-      position: relative;
-      overflow: hidden;
-      background: var(--glass);
-      border-radius: 28px;
-      box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.75),
-        inset 0 0 0 0.5px rgba(255, 255, 255, 0.45);
-      backdrop-filter: blur(28px) saturate(1.7);
-      -webkit-backdrop-filter: blur(28px) saturate(1.7);
-    }
+.lang button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: transparent;
+  color: var(--mute);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
 
-    .glass::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      border-radius: inherit;
-      background: linear-gradient(180deg, rgba(255, 255, 255, 0.48), transparent 38%);
-      pointer-events: none;
-    }
+.lang button:last-child { border-right: 0; }
 
-    .hero { margin-top: 28px; padding: 26px 24px 18px; }
+.lang button:first-child { border-radius: 5px 0 0 5px; }
+.lang button:last-child { border-radius: 0 5px 5px 0; }
 
-    .hero-kicker, .addr span, .facts dt, .when, .cloud, .empty {
-      color: var(--quiet);
-    }
+.lang button[aria-pressed="true"] {
+  background: var(--orange);
+  color: #fff;
+}
 
-    .hero-kicker {
-      position: relative;
-      margin: 0;
-      font-size: 15px;
-    }
+.lang button:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--orange);
+  outline-offset: 2px;
+  position: relative;
+  z-index: 1;
+}
 
-    .addr { position: relative; margin: 8px 0 0; }
+.lang button[aria-pressed="true"]:focus-visible {
+  outline-color: var(--ink);
+}
 
-    .addr strong, .delta b {
-      font-weight: 640;
-      font-variant-numeric: tabular-nums;
-      letter-spacing: -0.03em;
-      overflow-wrap: anywhere;
-    }
+main {
+  width: min(980px, 100%);
+  margin: 0 auto;
+  padding:
+    14px max(12px, env(safe-area-inset-right))
+    calc(36px + env(safe-area-inset-bottom))
+    max(12px, env(safe-area-inset-left));
+}
 
-    .addr strong {
-      display: block;
-      margin-top: 2px;
-      font-size: clamp(32px, 7vw, 44px);
-      line-height: 1.12;
-    }
+.meta-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
 
-    .addr + .addr { margin-top: 16px; }
-    .addr + .addr strong { font-size: clamp(22px, 4.5vw, 28px); }
+.meta {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
 
-    .pending { color: var(--quiet); font-size: 28px !important; }
+.meta dt {
+  margin: 0 0 4px;
+  color: var(--mute);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
 
-    .facts {
-      position: relative;
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 12px 16px;
-      margin: 22px 0 0;
-      padding-top: 16px;
-      box-shadow: inset 0 0.5px 0 var(--line);
-    }
+.meta dd {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
 
-    .facts div { min-width: 0; }
-    .facts dt { margin: 0; font-size: 13px; font-weight: 400; }
-    .facts dd {
-      margin: 3px 0 0;
-      font-size: 15px;
-      font-weight: 600;
-      letter-spacing: -0.01em;
-    }
+.meta dd.ok { color: var(--ok); }
+.meta dd.proxied { color: var(--orange); }
 
-    .mode { display: flex; align-items: center; gap: 8px; }
-    .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--live);
-      box-shadow: 0 0 0 4px rgba(36, 138, 61, 0.16);
-    }
-    .dot.wait { background: var(--quiet); box-shadow: none; }
-    .proxied { color: var(--amber); }
+.board {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
 
-    .sheet { margin-top: 12px; padding: 4px 18px; border-radius: 22px; }
+.board-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--head);
+}
 
-    .zone, .row, .change {
-      position: relative;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      min-height: 48px;
-      padding: 12px 0;
-    }
+.board-h h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
 
-    .zone { align-items: flex-start; }
-    .zone h3 {
-      margin: 0;
-      font-size: 17px;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      overflow-wrap: anywhere;
-    }
-    .cloud { flex-shrink: 0; margin-top: 2px; font-size: 13px; }
+.addr-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
 
-    .row + .row, .change + .change, .zone + .row, .zone + .change {
-      box-shadow: inset 0 0.5px 0 var(--line);
-    }
+.addr-line .lbl {
+  color: var(--mute);
+  font-weight: 600;
+  margin-right: 6px;
+}
 
-    .identity { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
-    .name { font-weight: 560; overflow-wrap: anywhere; }
-    .kind {
-      padding: 2px 8px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.55);
-      color: var(--ink);
-      font-size: 12px;
-      font-weight: 650;
-      white-space: nowrap;
-    }
-    .address {
-      font-variant-numeric: tabular-nums;
-      text-align: right;
-      overflow-wrap: anywhere;
-    }
+.addr-line .val {
+  font-family: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
 
-    .change { align-items: flex-start; flex-direction: column; gap: 4px; }
-    .delta { margin: 0; line-height: 1.4; overflow-wrap: anywhere; }
-    .when { font-size: 13px; }
+.table-wrap { overflow-x: auto; }
 
-    .empty { position: relative; margin: 0; padding: 14px 0 16px; }
+table.dns {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 560px;
+}
 
-    @keyframes drift {
-      from { transform: translate3d(0, 0, 0); }
-      to { transform: translate3d(8%, 6%, 0); }
-    }
+table.dns th {
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mute);
+  background: #f7f8fa;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
 
-    @media (max-width: 640px) {
-      h1 { font-size: 30px; }
-      .top { align-items: flex-start; flex-direction: column; }
-      .facts { grid-template-columns: 1fr; }
-      .row { align-items: flex-start; flex-direction: column; }
-      .address { text-align: left; }
-    }
+table.dns td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  vertical-align: middle;
+}
 
-    @media (prefers-reduced-motion: reduce) {
-      .glow { animation: none; }
-    }
-  </style>
+table.dns tr:last-child td { border-bottom: 0; }
+
+table.dns .zone-row td {
+  background: #fafbfc;
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--mute);
+  letter-spacing: 0.02em;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.type-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 3px;
+  background: var(--ink);
+  color: #fff;
+  font-family: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.type-badge.aaaa {
+  background: #3b4252;
+}
+
+.name-cell {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.content-cell {
+  font-family: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.proxy-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.proxy-pill.dns {
+  background: #eef0f3;
+  color: var(--grey-cloud);
+}
+
+.proxy-pill.proxied {
+  background: var(--orange-soft);
+  color: var(--orange);
+}
+
+.proxy-pill .cloud-ico {
+  width: 14px;
+  height: 9px;
+  border-radius: 50% 50% 42% 42%;
+  background: currentColor;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.proxy-pill.proxied .cloud-ico {
+  box-shadow: 0 0 0 1px rgba(246, 130, 31, 0.2);
+}
+
+.history-list { padding: 0; }
+
+.change {
+  display: grid;
+  grid-template-columns: 56px 1fr auto;
+  gap: 10px;
+  align-items: start;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.change:last-child { border-bottom: 0; }
+
+.change .type-badge { margin-top: 2px; }
+
+.change .body { min-width: 0; }
+
+.change .name {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  overflow-wrap: anywhere;
+}
+
+.delta {
+  margin: 0;
+  font-family: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.delta b { font-weight: 600; }
+
+.when {
+  color: var(--mute);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.empty {
+  margin: 0;
+  padding: 18px 14px;
+  color: var(--mute);
+  font-size: 13px;
+}
+
+#hero-kicker { display: none; }
+
+@media (max-width: 640px) {
+  .meta-strip { grid-template-columns: 1fr; }
+  .change {
+    grid-template-columns: 48px 1fr;
+  }
+  .when {
+    grid-column: 2;
+    text-align: left;
+    white-space: normal;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live .dot { transition: none; }
+}
+</style>
 </head>
 <body>
-  <div class="sky" aria-hidden="true"><i class="glow"></i></div>
-  <main>
-    <header class="top">
-      <h1>Cloudflare DDNS<br>Status Page</h1>
-      <div class="lang" id="lang" role="group" aria-label="語言">
-        <button type="button" data-lang="zh-Hant" aria-pressed="true">繁體</button>
-        <button type="button" data-lang="zh-Hans" aria-pressed="false">简体</button>
-        <button type="button" data-lang="en" aria-pressed="false">English</button>
-      </div>
-    </header>
-    <section class="hero glass" aria-labelledby="hero-kicker">
-      <p class="hero-kicker" id="hero-kicker">讀取中</p>
-      <div id="addresses"></div>
-      <dl class="facts">
-        <div><dt id="mode-label"></dt><dd class="mode"><i class="dot" id="dot"></i><span id="mode">讀取中</span></dd></div>
-        <div><dt id="cloud-label"></dt><dd id="cloud"></dd></div>
-        <div><dt id="checked-label"></dt><dd id="checked"></dd></div>
-      </dl>
-    </section>
-    <section>
+<div class="signal" aria-hidden="true"></div>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <span class="brand-sq" aria-hidden="true"></span>
+      <h1>Cloudflare DDNS</h1>
+      <span class="live wait" id="live"><span class="dot" aria-hidden="true"></span><span id="mode">讀取中</span></span>
+    </div>
+    <div class="lang" id="lang" role="group">
+      <button type="button" data-lang="zh-Hant" aria-pressed="true">繁體</button>
+      <button type="button" data-lang="zh-Hans" aria-pressed="false">简体</button>
+      <button type="button" data-lang="en" aria-pressed="false">English</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <p id="hero-kicker">讀取中</p>
+  <dl class="meta-strip">
+    <div class="meta">
+      <dt id="mode-label">狀況</dt>
+      <dd id="mode-metric">讀取中</dd>
+    </div>
+    <div class="meta">
+      <dt id="cloud-label">雲朵</dt>
+      <dd id="cloud">—</dd>
+    </div>
+    <div class="meta">
+      <dt id="checked-label">上次核對</dt>
+      <dd id="checked">—</dd>
+    </div>
+  </dl>
+
+  <section class="board" aria-labelledby="records-title">
+    <div class="board-h">
       <h2 id="records-title">監視中的紀錄</h2>
-      <div id="zones"></div>
-    </section>
-    <section>
-      <h2 id="history-title">更換紀錄</h2>
-      <div id="history"></div>
-    </section>
-  </main>
-  <script>
-    const COPY = {
-      "zh-Hant": {
-        group: "語言",
-        loading: "讀取中",
-        dryRun: "演練",
-        running: "運作中",
-        notStarted: "尚未開始",
-        proxied: "橙雲",
-        dnsOnly: "灰雲",
-        state: "狀況",
-        cloud: "雲朵",
-        checked: "上次核對",
-        now: "目前公網",
-        ipv4: "目前公網 IPv4",
-        ipv6: "目前公網 IPv6",
-        notChecked: "尚未核對",
-        records: "監視中的紀錄",
-        history: "更換紀錄",
-        newRecord: "新紀錄",
-        noAddress: "這個 zone 沒有可顯示的位址",
-        noZone: "尚未設定 zone",
-        noHistory: "還沒有更換紀錄",
-      },
-      "zh-Hans": {
-        group: "语言",
-        loading: "读取中",
-        dryRun: "演练",
-        running: "运行中",
-        notStarted: "尚未开始",
-        proxied: "橙云",
-        dnsOnly: "灰云",
-        state: "状况",
-        cloud: "云朵",
-        checked: "上次核对",
-        now: "当前公网",
-        ipv4: "当前公网 IPv4",
-        ipv6: "当前公网 IPv6",
-        notChecked: "尚未核对",
-        records: "监视中的记录",
-        history: "更换记录",
-        newRecord: "新记录",
-        noAddress: "这个 zone 没有可显示的地址",
-        noZone: "尚未设定 zone",
-        noHistory: "还没有更换记录",
-      },
-      en: {
-        group: "Language",
-        loading: "Loading",
-        dryRun: "Dry run",
-        running: "Running",
-        notStarted: "Not started",
-        proxied: "Proxied",
-        dnsOnly: "DNS only",
-        state: "Status",
-        cloud: "Cloud",
-        checked: "Last check",
-        now: "Public address",
-        ipv4: "Public IPv4",
-        ipv6: "Public IPv6",
-        notChecked: "Not checked yet",
-        records: "Watched records",
-        history: "Changes",
-        newRecord: "New record",
-        noAddress: "This zone has no address to show",
-        noZone: "No zone configured",
-        noHistory: "No changes yet",
-      },
-    };
+    </div>
+    <div class="addr-line" id="addresses" aria-live="polite"></div>
+    <div class="table-wrap">
+      <table class="dns" aria-labelledby="records-title">
+        <thead>
+          <tr>
+            <th scope="col">Type</th>
+            <th scope="col">Name</th>
+            <th scope="col">Content</th>
+            <th scope="col">Proxy status</th>
+          </tr>
+        </thead>
+        <tbody id="zones"></tbody>
+      </table>
+    </div>
+  </section>
 
-    const kicker = document.querySelector("#hero-kicker");
-    const addressesEl = document.querySelector("#addresses");
-    const dot = document.querySelector("#dot");
-    const modeEl = document.querySelector("#mode");
-    const cloudEl = document.querySelector("#cloud");
-    const checkedEl = document.querySelector("#checked");
-    const zonesEl = document.querySelector("#zones");
-    const historyEl = document.querySelector("#history");
-    const lang = document.querySelector("#lang");
-    let language = "zh-Hant";
-    let current = null;
+  <section class="board" aria-labelledby="history-title">
+    <div class="board-h"><h2 id="history-title">更換紀錄</h2></div>
+    <div class="history-list" id="history"></div>
+  </section>
+</main>
+<script>
+const COPY = {
+  "zh-Hant": {
+    group: "語言",
+    loading: "讀取中",
+    dryRun: "演練",
+    running: "運作中",
+    notStarted: "尚未開始",
+    proxied: "橙雲",
+    dnsOnly: "灰雲",
+    state: "狀況",
+    cloud: "雲朵",
+    checked: "上次核對",
+    now: "目前公網",
+    ipv4: "目前公網 IPv4",
+    ipv6: "目前公網 IPv6",
+    notChecked: "尚未核對",
+    records: "監視中的紀錄",
+    history: "更換紀錄",
+    newRecord: "新紀錄",
+    noAddress: "這個 zone 沒有可顯示的位址",
+    noZone: "尚未設定 zone",
+    noHistory: "還沒有更換紀錄",
+  },
+  "zh-Hans": {
+    group: "语言",
+    loading: "读取中",
+    dryRun: "演练",
+    running: "运行中",
+    notStarted: "尚未开始",
+    proxied: "橙云",
+    dnsOnly: "灰云",
+    state: "状况",
+    cloud: "云朵",
+    checked: "上次核对",
+    now: "当前公网",
+    ipv4: "当前公网 IPv4",
+    ipv6: "当前公网 IPv6",
+    notChecked: "尚未核对",
+    records: "监视中的记录",
+    history: "更换记录",
+    newRecord: "新记录",
+    noAddress: "这个 zone 没有可显示的地址",
+    noZone: "尚未设定 zone",
+    noHistory: "还没有更换记录",
+  },
+  en: {
+    group: "Language",
+    loading: "Loading",
+    dryRun: "Dry run",
+    running: "Running",
+    notStarted: "Not started",
+    proxied: "Proxied",
+    dnsOnly: "DNS only",
+    state: "Status",
+    cloud: "Cloud",
+    checked: "Last check",
+    now: "Public address",
+    ipv4: "Public IPv4",
+    ipv6: "Public IPv6",
+    notChecked: "Not checked yet",
+    records: "Watched records",
+    history: "Changes",
+    newRecord: "New record",
+    noAddress: "This zone has no address to show",
+    noZone: "No zone configured",
+    noHistory: "No changes yet",
+  },
+};
 
-    function t(key) {
-      return COPY[language][key];
-    }
+const kicker = document.querySelector("#hero-kicker");
+const addressesEl = document.querySelector("#addresses");
+const liveEl = document.querySelector("#live");
+const modeEl = document.querySelector("#mode");
+const modeMetric = document.querySelector("#mode-metric");
+const cloudEl = document.querySelector("#cloud");
+const checkedEl = document.querySelector("#checked");
+const zonesEl = document.querySelector("#zones");
+const historyEl = document.querySelector("#history");
+const lang = document.querySelector("#lang");
+let language = "zh-Hant";
+let current = null;
 
-    function text(value) {
-      return String(value ?? "");
-    }
+function t(key) { return COPY[language][key]; }
+function text(value) { return String(value ?? ""); }
+function escapeHtml(value) {
+  return text(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+function clock(value) {
+  if (!value) return t("notChecked");
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const pad = (part) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+function ip(value) {
+  return escapeHtml(value).replaceAll(":", ":<wbr>");
+}
+function before(value) {
+  return value ? ip(value) : escapeHtml(t("newRecord"));
+}
+function badge(kind) {
+  const mark = kind === "AAAA" ? " aaaa" : "";
+  return `<span class="type-badge${mark}">${escapeHtml(kind)}</span>`;
+}
 
-    function escapeHtml(value) {
-      return text(value)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;");
-    }
+function applyLanguage(next) {
+  language = COPY[next] ? next : "zh-Hant";
+  try { localStorage.setItem("cloudflare-ddns-lang", language); } catch (_) {}
+  document.documentElement.lang = language;
+  lang.setAttribute("aria-label", t("group"));
+  for (const button of lang.querySelectorAll("button")) {
+    button.setAttribute("aria-pressed", String(button.dataset.lang === language));
+  }
+  document.querySelector("#records-title").textContent = t("records");
+  document.querySelector("#history-title").textContent = t("history");
+  document.querySelector("#mode-label").textContent = t("state");
+  document.querySelector("#cloud-label").textContent = t("cloud");
+  document.querySelector("#checked-label").textContent = t("checked");
+  if (current) render(current);
+  else {
+    kicker.textContent = t("loading");
+    modeEl.textContent = t("loading");
+    modeMetric.textContent = t("loading");
+  }
+}
 
-    function clock(value) {
-      if (!value) return t("notChecked");
-      const date = new Date(value);
-      if (Number.isNaN(date.getTime())) return value;
-      const pad = (part) => String(part).padStart(2, "0");
-      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-    }
+function render(data) {
+  current = data;
+  const types = data.types && data.types.length ? data.types : ["A", "AAAA"];
+  const addresses = data.addresses || {};
+  const cloud = data.proxied ? t("proxied") : t("dnsOnly");
+  const live = Boolean(data.watching) && !data.dry_run;
+  liveEl.classList.toggle("wait", !live);
+  const statusText = data.dry_run ? t("dryRun") : data.watching ? t("running") : t("notStarted");
+  modeEl.textContent = live ? "LIVE" : statusText;
+  modeMetric.textContent = statusText;
+  modeMetric.classList.toggle("ok", Boolean(data.watching) && !data.dry_run);
+  cloudEl.textContent = cloud;
+  cloudEl.classList.toggle("proxied", Boolean(data.proxied));
+  checkedEl.textContent = data.updated_at ? clock(data.updated_at) : t("notChecked");
+  kicker.textContent = types.length === 1 ? (types[0] === "A" ? t("ipv4") : t("ipv6")) : t("now");
+  addressesEl.innerHTML = types.map((kind) => {
+    const shown = addresses[kind] ? ip(addresses[kind]) : escapeHtml(t("notChecked"));
+    const label = kind === "A" ? t("ipv4") : t("ipv6");
+    return `<span><span class="lbl">${escapeHtml(label)}</span><span class="val">${shown}</span></span>`;
+  }).join("");
+  const proxyClass = data.proxied ? "proxied" : "dns";
+  const zones = data.zones || [];
+  if (!zones.length) {
+    zonesEl.innerHTML = `<tr><td colspan="4" class="empty">${escapeHtml(t("noZone"))}</td></tr>`;
+  } else {
+    zonesEl.innerHTML = zones.map((zone) => {
+      const names = zone.names || [];
+      const rows = names.length
+        ? names.flatMap((name) => types.map((kind) => `
+          <tr>
+            <td>${badge(kind)}</td>
+            <td class="name-cell">${escapeHtml(name)}</td>
+            <td class="content-cell">${addresses[kind] ? ip(addresses[kind]) : escapeHtml(t("notChecked"))}</td>
+            <td><span class="proxy-pill ${proxyClass}"><span class="cloud-ico" aria-hidden="true"></span>${escapeHtml(cloud)}</span></td>
+          </tr>`)).join("")
+        : `<tr><td colspan="4" class="empty">${escapeHtml(t("noAddress"))}</td></tr>`;
+      return `<tr class="zone-row"><td colspan="4">${escapeHtml(zone.domain)}</td></tr>${rows}`;
+    }).join("");
+  }
+  const items = data.history || [];
+  historyEl.innerHTML = items.length
+    ? items.map((item) => `
+      <div class="change">
+        ${badge(item.type)}
+        <div class="body">
+          <div class="name">${escapeHtml(item.name)}</div>
+          <p class="delta"><b>${before(item.before)}</b> → <b>${ip(item.after)}</b></p>
+        </div>
+        <div class="when">${escapeHtml(clock(item.at))}</div>
+      </div>`).join("")
+    : `<p class="empty">${escapeHtml(t("noHistory"))}</p>`;
+}
 
-    function ip(value) {
-      return escapeHtml(value).replaceAll(":", ":<wbr>");
-    }
+lang.addEventListener("click", (event) => {
+  const button = event.target.closest("button");
+  if (!button) return;
+  applyLanguage(button.dataset.lang);
+});
 
-    function before(value) {
-      return value ? ip(value) : escapeHtml(t("newRecord"));
-    }
+async function load() {
+  const response = await fetch("/api/status", { cache: "no-store" });
+  render(await response.json());
+}
 
-    function applyLanguage(next) {
-      language = COPY[next] ? next : "zh-Hant";
-      localStorage.setItem("cloudflare-ddns-lang", language);
-      document.documentElement.lang = language;
-      lang.setAttribute("aria-label", t("group"));
-      for (const button of lang.querySelectorAll("button")) {
-        button.setAttribute("aria-pressed", String(button.dataset.lang === language));
-      }
-      document.querySelector("#records-title").textContent = t("records");
-      document.querySelector("#history-title").textContent = t("history");
-      document.querySelector("#mode-label").textContent = t("state");
-      document.querySelector("#cloud-label").textContent = t("cloud");
-      document.querySelector("#checked-label").textContent = t("checked");
-      if (current) render(current);
-      else {
-        kicker.textContent = t("loading");
-        modeEl.textContent = t("loading");
-      }
-    }
-
-    function render(data) {
-      current = data;
-      const types = data.types && data.types.length ? data.types : ["A", "AAAA"];
-      const addresses = data.addresses || {};
-      const cloud = data.proxied ? t("proxied") : t("dnsOnly");
-      dot.classList.toggle("wait", !data.watching);
-      modeEl.textContent = data.dry_run ? t("dryRun") : data.watching ? t("running") : t("notStarted");
-      cloudEl.textContent = cloud;
-      cloudEl.classList.toggle("proxied", Boolean(data.proxied));
-      checkedEl.textContent = data.updated_at ? clock(data.updated_at) : t("notChecked");
-      kicker.textContent = types.length === 1 ? (types[0] === "A" ? t("ipv4") : t("ipv6")) : t("now");
-      addressesEl.innerHTML = types.map((kind) => {
-        const shown = addresses[kind] ? ip(addresses[kind]) : escapeHtml(t("notChecked"));
-        const pending = addresses[kind] ? "" : " pending";
-        const label = types.length === 1 ? "" : `<span>${escapeHtml(kind === "A" ? t("ipv4") : t("ipv6"))}</span>`;
-        return `<p class="addr">${label}<strong class="${pending.trim()}">${shown}</strong></p>`;
-      }).join("");
-      zonesEl.innerHTML = (data.zones || []).map((zone) => {
-        const rows = (zone.names || []).flatMap((name) => types.map((kind) => `
-          <div class="row">
-            <div class="identity"><span class="name">${escapeHtml(name)}</span><span class="kind">${kind}</span></div>
-            <span class="address">${addresses[kind] ? ip(addresses[kind]) : escapeHtml(t("notChecked"))}</span>
-          </div>`)).join("");
-        return `<section class="sheet glass"><header class="zone"><h3>${escapeHtml(zone.domain)}</h3><span class="cloud">${escapeHtml(cloud)}</span></header>${rows || `<p class="empty">${escapeHtml(t("noAddress"))}</p>`}</section>`;
-      }).join("") || `<p class="empty">${escapeHtml(t("noZone"))}</p>`;
-      const items = data.history || [];
-      historyEl.innerHTML = items.length
-        ? `<div class="sheet glass">${items.map((item) => `
-            <article class="change">
-              <div class="identity"><span class="name">${escapeHtml(item.name)}</span><span class="kind">${escapeHtml(item.type)}</span></div>
-              <p class="delta">${before(item.before)} → <b>${ip(item.after)}</b></p>
-              <time class="when">${escapeHtml(clock(item.at))}</time>
-            </article>`).join("")}</div>`
-        : `<p class="empty">${escapeHtml(t("noHistory"))}</p>`;
-    }
-
-    lang.addEventListener("click", (event) => {
-      const button = event.target.closest("button");
-      if (!button) return;
-      applyLanguage(button.dataset.lang);
-    });
-
-    async function load() {
-      const response = await fetch("/api/status", { cache: "no-store" });
-      render(await response.json());
-    }
-
-    applyLanguage(localStorage.getItem("cloudflare-ddns-lang") || "zh-Hant");
-    load();
-    setInterval(load, 5000);
-  </script>
+applyLanguage((() => { try { return localStorage.getItem("cloudflare-ddns-lang"); } catch (_) { return null; } })() || "zh-Hant");
+load();
+setInterval(load, 5000);
+</script>
 </body>
 </html>
