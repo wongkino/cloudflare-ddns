@@ -103,6 +103,16 @@ h1 {
   background: currentColor;
 }
 
+.version {
+  color: var(--mute);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.version[hidden] { display: none; }
+
 .lang {
   display: flex;
   border: 1px solid var(--line);
@@ -414,6 +424,7 @@ table.dns .zone-row td {
       <span class="brand-sq" aria-hidden="true"></span>
       <h1>Cloudflare DDNS</h1>
       <span class="live wait" id="live"><span class="dot" aria-hidden="true"></span><span id="mode">讀取中</span></span>
+      <span class="version" id="version" hidden></span>
     </div>
     <div class="lang" id="lang" role="group">
       <button type="button" data-lang="zh-Hant" aria-pressed="true">繁體</button>
@@ -469,6 +480,7 @@ table.dns .zone-row td {
 const COPY = {
   "zh-Hant": {
     group: "語言",
+    version: "版本",
     loading: "讀取中",
     dryRun: "演練",
     running: "運作中",
@@ -491,6 +503,7 @@ const COPY = {
   },
   "zh-Hans": {
     group: "语言",
+    version: "版本",
     loading: "读取中",
     dryRun: "演练",
     running: "运行中",
@@ -513,6 +526,7 @@ const COPY = {
   },
   en: {
     group: "Language",
+    version: "Version",
     loading: "Loading",
     dryRun: "Dry run",
     running: "Running",
@@ -545,6 +559,7 @@ const checkedEl = document.querySelector("#checked");
 const zonesEl = document.querySelector("#zones");
 const historyEl = document.querySelector("#history");
 const lang = document.querySelector("#lang");
+const versionEl = document.querySelector("#version");
 let language = "zh-Hant";
 let current = null;
 
@@ -593,11 +608,20 @@ function applyLanguage(next) {
     kicker.textContent = t("loading");
     modeEl.textContent = t("loading");
     modeMetric.textContent = t("loading");
+    showVersion(null);
   }
+}
+
+function showVersion(data) {
+  const version = data ? text(data.version).trim() : "";
+  versionEl.hidden = !version;
+  versionEl.textContent = version ? `${t("version")} ${version}` : "";
+  document.title = version ? `Cloudflare DDNS · ${version}` : "Cloudflare DDNS";
 }
 
 function render(data) {
   current = data;
+  showVersion(data);
   const types = data.types && data.types.length ? data.types : ["A", "AAAA"];
   const addresses = data.addresses || {};
   const cloud = data.proxied ? t("proxied") : t("dnsOnly");

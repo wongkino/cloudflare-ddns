@@ -138,6 +138,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
           tags: |
             type=raw,value=${{ inputs.platform }}
             type=sha,prefix=${{ inputs.platform }}-
@@ -152,5 +154,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            APP_VERSION=${{ steps.version.outputs.version }}
           cache-from: type=gha,scope=${{ inputs.platform }}
           cache-to: type=gha,mode=max,scope=${{ inputs.platform }}

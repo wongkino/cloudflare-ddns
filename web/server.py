@@ -4,6 +4,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from .version import app_version
+
 ROOT = Path(__file__).resolve().parent
 FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
@@ -18,7 +20,10 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/api/status":
             view = parse_qs(parsed.query).get("view", ["single"])[0]
-            body = json.dumps(self.provider(view), ensure_ascii=False).encode()
+            payload = self.provider(view)
+            if isinstance(payload, dict):
+                payload = {**payload, "version": app_version()}
+            body = json.dumps(payload, ensure_ascii=False).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Cache-Control", "no-store")

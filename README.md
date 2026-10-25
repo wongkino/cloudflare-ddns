@@ -16,7 +16,7 @@ The container follows the host's default route. After the gateway changes, the n
 - Update one zone, or only the zones you list. Other zones in the account stay untouched.
 - Send one [Apprise](https://github.com/caronc/apprise) notice when an address itself changes. TTL-only edits stay quiet.
 - Skip Cloudflare while the address matches the last check, and still recheck on a timer so hand edits are put back.
-- Open an optional status page for the current address, the watched names, and real changes.
+- Open an optional status page for the current address, the watched names, real changes, and the image version.
 - Dry-run a round and print the writes without calling Cloudflare's write API.
 
 ## 🖼 Preview
@@ -27,7 +27,8 @@ The page is a light DNS console: an orange signal strip, status tiles, then a ta
 
 ![Status page for one zone. An orange strip sits above status tiles, a DNS table for the watched name, and a change list.](docs/status-single.png)
 
-- The orange strip and the LIVE chip mean the updater is running. Three tiles show status, grey cloud or orange cloud, and the last check.
+- The orange strip and the LIVE chip mean the updater is running. The image version sits beside that chip.
+- Three tiles show status, grey cloud or orange cloud, and the last check.
 - The address line is the current public address. This picture watches A only, so it shows IPv4.
 - Watched records are a DNS table. A grey-cloud pill means DNS-only, and an orange-cloud pill means proxied.
 - A change appears only when an address itself changes. The old address is on the left of the arrow.
@@ -120,7 +121,7 @@ docker compose -f docker-compose.multi.yml logs -f
 
 `WEB_UI` is off by default. Set it to `true` and the same process serves the page on the host network at `WEB_PORT` (8080 by default). Do not add `ports`. The port stays closed while `WEB_UI` is `false`. Open `http://127.0.0.1:8080`.
 
-The page shows that container's `DOMAIN`. There is no switch between setups. History is stored only when an address actually changes, up to 100 entries. A dry run does not store history.
+The page shows that container's `DOMAIN`. There is no switch between setups. History is stored only when an address actually changes, up to 100 entries. A dry run does not store history. The version beside the LIVE chip is the one baked into the running image. `/api/status` includes it as `version`.
 
 #### Dry run
 
@@ -226,6 +227,8 @@ ghcr.io/wongkino/cloudflare-ddns:arm64
 
 The same run also pushes a commit tag prefixed with the architecture, a version tag, and that architecture's latest tag. An `amd64` version looks like `1.1.3`. An `arm64` version looks like `1.1.3-arm64`. Latest tags are `latest` and `latest-arm64`. An empty **Version** increments that architecture's patch, or starts at `1.0.0`. Fill it in only to choose a version, for example `2.0.0`. Use `1.2`, `1.2.0`, `v1.2.0`, or the same form with a suffix such as `-rc1`.
 
+That same version string is passed into the image build as `APP_VERSION`. The status page reads it from the running container, so after an upgrade the top bar shows the new version. A source checkout with no version set shows `dev`.
+
 ## 🧰 Tech Stack
 
 - Python 3.14.8 on Alpine, non-root user `10001`
@@ -255,7 +258,8 @@ The same run also pushes a commit tag prefixed with the architecture, a version 
 │   ├── fixtures.py
 │   ├── index.html
 │   ├── server.py
-│   └── snapshot.py
+│   ├── snapshot.py
+│   └── version.py
 └── .github/workflows/docker-amd64.yml
 ```
 

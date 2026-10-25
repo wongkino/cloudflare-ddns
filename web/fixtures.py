@@ -1,3 +1,5 @@
+from .version import app_version
+
 SINGLE = {
     "view": "single",
     "updated_at": "2026-10-17T21:04:12+08:00",
@@ -58,4 +60,6 @@ MULTI = {
 
 
 def snapshot(view):
-    return MULTI if view == "multi" else SINGLE
+    data = dict(MULTI if view == "multi" else SINGLE)
+    data["version"] = app_version()
+    return data

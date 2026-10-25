@@ -16,7 +16,7 @@
 - 更新一個 zone，或只更新你列出的 zone。同一個帳號裡的其他 zone 不會動。
 - 位址本身改變時，透過 [Apprise](https://github.com/caronc/apprise) 發一則通知。只改 TTL 不會發。
 - 位址與上次核對相同時略過 Cloudflare，仍會定時完整核對，把手動改過的紀錄改回來。
-- 可選的狀態頁顯示目前位址、監視中的名稱，以及真正換過的位址。
+- 可選的狀態頁顯示目前位址、監視中的名稱、真正換過的位址，以及映像版本。
 - 可以演練一輪，印出即將寫入的內容，不呼叫 Cloudflare 的寫入 API。
 
 ## 🖼 預覽
@@ -27,7 +27,8 @@
 
 ![單一 zone 狀態頁。橘色訊號條下是狀況方塊、監視名稱的 DNS 表格，以及更換紀錄。](docs/status-single.png)
 
-- 橘色訊號條與 LIVE 表示運作中。三個方塊分別是狀況、灰雲或橙雲，以及上次核對。
+- 橘色訊號條與 LIVE 表示運作中。映像版本在 LIVE 旁邊。
+- 三個方塊分別是狀況、灰雲或橙雲，以及上次核對。
 - 位址列是目前公網位址。這張圖只監視 A，所以只顯示 IPv4。
 - 「監視中的紀錄」是 DNS 表格。灰雲膠囊表示只走 DNS，橙雲膠囊表示經過代理。
 - 「更換紀錄」只在位址真的改變時出現。箭頭左邊是舊位址。
@@ -120,7 +121,7 @@ docker compose -f docker-compose.multi.yml logs -f
 
 `WEB_UI` 預設關閉。設為 `true` 後，同一個程式在主機網路的 `WEB_PORT`（預設 `8080`）提供狀態頁。不要另加 `ports`。`WEB_UI` 為 `false` 時這個連接埠不會開啟。打開 `http://127.0.0.1:8080`。
 
-頁面內容就是這一個容器的 `DOMAIN`。沒有切換。位址真的改變才寫入更換紀錄，最多 100 筆。演練不會寫入紀錄。
+頁面內容就是這一個容器的 `DOMAIN`。沒有切換。位址真的改變才寫入更換紀錄，最多 100 筆。演練不會寫入紀錄。LIVE 旁邊的版本號是建置時寫進這個映像的版本。`/api/status` 會帶 `version`。
 
 #### 演練
 
@@ -226,6 +227,8 @@ ghcr.io/wongkino/cloudflare-ddns:arm64
 
 同一輪也會推上架構開頭的 commit 標籤、版本標籤，以及該架構的 latest。`amd64` 的版本像 `1.1.3`，`arm64` 的版本像 `1.1.3-arm64`。latest 分別是 `latest` 與 `latest-arm64`。**Version** 留空時，會把該架構現有最大版本的 patch 加一。還沒有版本標籤時從 `1.0.0` 開始。只有要指定版本時才填，例如 `2.0.0`。格式須為 `1.2`、`1.2.0`、`v1.2.0`，或在後面加 `-rc1` 這類後綴。
 
+同一個版本字串會以 `APP_VERSION` 寫進映像。狀態頁從正在跑的容器讀出它，升級後頂端會換成新版本。沒有設定版本的原始碼會顯示 `dev`。
+
 ## 🧰 技術棧
 
 - Python 3.14.8（Alpine），非 root 使用者 `10001`
@@ -255,7 +258,8 @@ ghcr.io/wongkino/cloudflare-ddns:arm64
 │   ├── fixtures.py
 │   ├── index.html
 │   ├── server.py
-│   └── snapshot.py
+│   ├── snapshot.py
+│   └── version.py
 └── .github/workflows/docker-amd64.yml
 ```
 
