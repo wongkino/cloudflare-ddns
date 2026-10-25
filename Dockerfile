@@ -5,6 +5,9 @@ RUN pip install --no-cache-dir apprise==2.0.1 \
  && adduser -D -u 10001 app
 COPY updater.py .
 COPY web ./web
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}
+RUN printf '%s\n' "$APP_VERSION" > /app/VERSION
 USER app
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \

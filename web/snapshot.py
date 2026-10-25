@@ -3,6 +3,8 @@ import os
 import threading
 from datetime import datetime
 
+from .version import app_version
+
 LOCK = threading.Lock()
 LIMIT = 100
 
@@ -23,6 +25,7 @@ def empty():
         "addresses": {},
         "zones": [],
         "history": [],
+        "version": app_version(),
     }
 
 
@@ -36,6 +39,7 @@ def load():
         return empty()
     base = empty()
     base.update({key: data.get(key, base[key]) for key in base})
+    base["version"] = app_version()
     return base
 
 

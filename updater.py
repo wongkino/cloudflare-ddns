@@ -807,6 +807,7 @@ def self_test():
     from web.snapshot import configure
     from web.snapshot import load
     from web.snapshot import record
+    from web.version import app_version
 
     configured = configure(
         [
@@ -820,6 +821,7 @@ def self_test():
     )
     assert configured["view"] == "multi"
     assert configured["updated_at"] is None
+    assert configured["version"] == app_version()
     assert [zone["domain"] for zone in load()["zones"]] == ["example.com", "example.net"]
 
     saved = record(
@@ -832,6 +834,7 @@ def self_test():
         30,
     )
     assert saved["view"] == "single"
+    assert saved["version"] == app_version()
     assert load()["history"][0]["after"] == "203.0.113.10"
     record(
         [
@@ -847,6 +850,40 @@ def self_test():
     )
     assert load()["view"] == "multi"
     assert len(load()["history"]) == 1
+    previous = os.environ.get("APP_VERSION")
+    os.environ["APP_VERSION"] = "9.9.9-test"
+    server = None
+    try:
+        assert app_version() == "9.9.9-test"
+        assert load()["version"] == "9.9.9-test"
+        from web.server import start
+
+        server = start(0, lambda _view: {"view": "single", "version": "0.0.0-stale"})
+        port = server.server_address[1]
+        body = None
+        error = None
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            try:
+                with urllib.request.urlopen(
+                    f"http://127.0.0.1:{port}/api/status", timeout=2
+                ) as response:
+                    body = json.load(response)
+                break
+            except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+                error = exc
+                time.sleep(0.05)
+        assert body is not None, error
+        assert body["version"] == "9.9.9-test"
+        assert body["view"] == "single"
+    finally:
+        if server is not None:
+            server.shutdown()
+            server.server_close()
+        if previous is None:
+            os.environ.pop("APP_VERSION", None)
+        else:
+            os.environ["APP_VERSION"] = previous
     log("自我測試通過")
 
 
@@ -854,6 +891,9 @@ def main():
     if os.environ.get("SELF_TEST") == "1":
         self_test()
         return
+    from web.version import app_version
+
+    log(f"版本 {app_version()}")
     signal.signal(signal.SIGTERM, handle_stop)
     signal.signal(signal.SIGINT, handle_stop)
     domain_list = domains(required("DOMAIN"))
