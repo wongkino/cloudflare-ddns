@@ -23,24 +23,26 @@ The container follows the host's default route. After the gateway changes, the n
 
 The pictures use sample data (`example.com`, `203.0.113.10`). They are not a deployment.
 
-![Status page for one zone. The top glass is the public IPv4 address, the middle lists watched records, and the bottom lists changes.](docs/status-single.png)
+The page is a light DNS console: an orange signal strip, status tiles, then a table of Type, Name, Content, and Proxy status.
 
-- The top glass is the current public address. This picture watches A only, so it shows IPv4.
-- On the same glass, the green dot means the updater is running, the middle shows DNS-only or proxied, and the right side is the last check.
-- Watched records are this container's zone and names, with the address written now.
+![Status page for one zone. An orange strip sits above status tiles, a DNS table for the watched name, and a change list.](docs/status-single.png)
+
+- The orange strip and the LIVE chip mean the updater is running. Three tiles show status, grey cloud or orange cloud, and the last check.
+- The address line is the current public address. This picture watches A only, so it shows IPv4.
+- Watched records are a DNS table. A grey-cloud pill means DNS-only, and an orange-cloud pill means proxied.
 - A change appears only when an address itself changes. The old address is on the left of the arrow.
 
 ### Specific zones
 
-![Status page for several zones. IPv4 and IPv6 are at the top, each zone has its own glass, and changes are listed at the bottom.](docs/status-multi.png)
+![Status page for several zones. The DNS table groups each zone into A and AAAA rows, and changes are listed underneath.](docs/status-multi.png)
 
-The same public address is written to every listed name. A and AAAA both appear at the top. Each zone has its own glass. The change list mixes updates from all of those names.
+The same public address is written to every listed name. A and AAAA are separate rows. Each zone is a header in the table. The change list mixes updates from all of those names.
 
 ### Phone
 
-![Status page for one zone on a phone. The language control sits under the title, and the status rows stack.](docs/status-phone.png)
+![Status page for one zone on a phone. Status tiles stack, and the DNS table stays on the narrow screen.](docs/status-phone.png)
 
-On a narrow screen the title and language control stack, and the status, names, and addresses stack inside the glass. The control switches Traditional Chinese, Simplified Chinese, and English.
+On a narrow screen the status tiles stack, and the DNS table can scroll sideways. The control switches Traditional Chinese, Simplified Chinese, and English.
 
 To look at the layout on this machine without calling Cloudflare:
 
