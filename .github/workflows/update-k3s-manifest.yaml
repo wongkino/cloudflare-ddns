@@ -1,0 +1,124 @@
+# Reusable：build 完後更新 k3s-homelab manifest 的 image（tag 與／或 digest）
+#
+# 同 repo（k3s-homelab）：
+#   secrets.token: ${{ secrets.GITHUB_TOKEN }}
+# 外部 app repo：
+#   secrets.token: ${{ secrets.K3S_HOMELAB_PAT }}  # repo secret，需 k3s-homelab write
+#
+#   deploy:
+#     needs: build
+#     uses: wongkino/k3s-homelab/.github/workflows/update-k3s-manifest.yaml@main
+#     with:
+#       manifest_path: apps/diy/my-app/resources.yaml
+#       image: ghcr.io/wongkino/my-app
+#       tag: ${{ needs.build.outputs.tag }}
+#       digest: ${{ needs.build.outputs.digest }}   # 建議：寫成 image:tag@sha256:…
+#     secrets:
+#       token: ${{ secrets.K3S_HOMELAB_PAT }}
+name: Update k3s manifest
+
+on:
+  workflow_call:
+    inputs:
+      manifest_path:
+        description: Path in k3s-homelab (e.g. apps/diy/my-app/resources.yaml)
+        required: true
+        type: string
+      image:
+        description: Full image name without tag (e.g. ghcr.io/wongkino/my-app)
+        required: true
+        type: string
+      tag:
+        description: Image tag（有 digest 時寫成 :tag@sha256；僅 tag 時寫 :tag）
+        required: true
+        type: string
+      digest:
+        description: Optional image digest（sha256:… 或裸 hex）；建議傳入以 immutable pull
+        required: false
+        type: string
+        default: ""
+      commit_message:
+        description: "Optional commit message (default ci: update image)"
+        required: false
+        type: string
+    secrets:
+      token:
+        description: GitHub token with write access to k3s-homelab
+        required: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: wongkino/k3s-homelab
+          token: ${{ secrets.token }}
+          ref: main
+
+      - name: Pin image in manifest
+        env:
+          MANIFEST: ${{ inputs.manifest_path }}
+          IMAGE: ${{ inputs.image }}
+          TAG: ${{ inputs.tag }}
+          DIGEST: ${{ inputs.digest }}
+        run: |
+          set -euo pipefail
+          if [ ! -f "$MANIFEST" ]; then
+            echo "Manifest not found: $MANIFEST" >&2
+            exit 1
+          fi
+          # Python（勿用 perl：s/// 會把 @sha256 當陣列插值，只匹配 :0 導致 0.9.17.9.14）
+          python3 <<'PY'
+          import os, pathlib, re
+          path = pathlib.Path(os.environ["MANIFEST"])
+          image = os.environ["IMAGE"]
+          tag = os.environ["TAG"].strip()
+          digest = os.environ.get("DIGEST", "").strip()
+          if digest and not digest.startswith("sha256:"):
+              digest = f"sha256:{digest}"
+          if digest:
+              pin = f"{image}:{tag}@{digest}"
+          else:
+              pin = f"{image}:{tag}"
+          text = path.read_text()
+          # Match image, optional :tag, optional @sha256:…
+          pat = re.compile(
+              re.escape(image) + r'(?::[^\s@"\']+)?(?:@sha256:[0-9a-f]+)?'
+          )
+          new, n = pat.subn(pin, text, count=0)
+          if n == 0:
+              raise SystemExit(f"No image match for {image} in {path}")
+          path.write_text(new)
+          print(f"Pinned {n} occurrence(s) → {pin}")
+          PY
+          if git diff --quiet -- "$MANIFEST"; then
+            echo "No manifest change (already pinned)"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Updated ${IMAGE} in ${MANIFEST}"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+        id: pin
+
+      - name: Commit and push
+        if: steps.pin.outputs.changed == 'true'
+        env:
+          MANIFEST: ${{ inputs.manifest_path }}
+          IMAGE: ${{ inputs.image }}
+          TAG: ${{ inputs.tag }}
+          DIGEST: ${{ inputs.digest }}
+          COMMIT_MSG: ${{ inputs.commit_message }}
+        run: |
+          set -euo pipefail
+          if [ -n "${DIGEST}" ]; then
+            REF="${TAG}@${DIGEST}"
+          else
+            REF="${TAG}"
+          fi
+          MSG="${COMMIT_MSG:-ci: update ${IMAGE} to ${REF}}"
+          git add "$MANIFEST"
+          git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "$MSG"
+          git push
