@@ -218,7 +218,9 @@ apprises://apprise.example.com/token
 
 ### 映像
 
-在 GitHub 開啟 **Actions**，選擇 **Build image**，再按 **Run workflow**。這個工作只會在手動執行時跑。**Platform** 選 `amd64` 給一般電腦，選 `arm64` 給 64-bit Raspberry Pi OS（Pi 3、4、5、Zero 2 W）。32-bit 的 Raspberry Pi OS 不能用這個 `arm64` 映像。
+推上 `main` 而且改了 `Dockerfile`、`updater.py`、`web/` 或這個 workflow 時，會自動 build `amd64`、把 patch 加一，並把新的 tag 與 digest 寫進 k3s 的 `apps/network/cloudflare-ddns/resources.yaml`。只改 README 不會觸發。
+
+`arm64` 不會在 push 時自動 build。要給 64-bit Raspberry Pi OS（Pi 3、4、5、Zero 2 W）出映像，在 GitHub 開啟 **Actions**，選擇 **Build image**，再按 **Run workflow**，**Platform** 選 `arm64`。32-bit 的 Raspberry Pi OS 不能用這個映像。手動選 `amd64` 時同樣會寫回 k3s；`arm64` 不會改 k3s manifest。
 
 ```text
 ghcr.io/wongkino/cloudflare-ddns:amd64

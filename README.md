@@ -218,7 +218,9 @@ The notice is in English. The title is `IP changed`. The body starts with the pu
 
 ### Images
 
-Open **Actions**, choose **Build image**, and select **Run workflow**. The workflow runs only when started by hand. Choose `amd64` for a regular computer, or `arm64` for 64-bit Raspberry Pi OS (Pi 3, 4, 5, and Zero 2 W). 32-bit Raspberry Pi OS cannot run the `arm64` image.
+A push to `main` that changes `Dockerfile`, `updater.py`, `web/`, or this workflow builds `amd64`, increments the patch version, and writes the new tag and digest into the k3s manifest `apps/network/cloudflare-ddns/resources.yaml`. A README-only push does not build.
+
+`arm64` is not built on push. To publish an image for 64-bit Raspberry Pi OS (Pi 3, 4, 5, and Zero 2 W), open **Actions**, choose **Build image**, and select **Run workflow** with **Platform** `arm64`. 32-bit Raspberry Pi OS cannot run that image. A manual `amd64` run also updates the k3s manifest. An `arm64` run does not.
 
 ```text
 ghcr.io/wongkino/cloudflare-ddns:amd64

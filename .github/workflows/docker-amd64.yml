@@ -1,6 +1,14 @@
 name: Build image
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - Dockerfile
+      - updater.py
+      - web/**
+      - .github/workflows/docker-amd64.yml
   workflow_dispatch:
     inputs:
       platform:
@@ -24,8 +32,30 @@ env:
   IMAGE: ghcr.io/wongkino/cloudflare-ddns
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      platform: ${{ steps.set.outputs.platform }}
+      version: ${{ steps.set.outputs.version }}
+    steps:
+      - name: Resolve platform and requested version
+        id: set
+        env:
+          EVENT: ${{ github.event_name }}
+          PLATFORM_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.platform || 'amd64' }}
+          VERSION_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '' }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "platform=${PLATFORM_INPUT}" >> "$GITHUB_OUTPUT"
+            echo "version=${VERSION_INPUT}" >> "$GITHUB_OUTPUT"
+          else
+            echo "platform=amd64" >> "$GITHUB_OUTPUT"
+            echo "version=" >> "$GITHUB_OUTPUT"
+          fi
+
   image:
-    name: linux/${{ inputs.platform }}
+    name: linux/${{ needs.prepare.outputs.platform }}
+    needs: prepare
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -35,7 +65,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up QEMU
-        if: inputs.platform == 'arm64'
+        if: needs.prepare.outputs.platform == 'arm64'
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
@@ -51,8 +81,8 @@ jobs:
       - name: Resolve version
         id: version
         env:
-          VERSION: ${{ inputs.version }}
-          ARCH: ${{ inputs.platform }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          ARCH: ${{ needs.prepare.outputs.platform }}
           GH_ACTOR: ${{ github.actor }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -144,30 +174,30 @@ jobs:
           labels: |
             org.opencontainers.image.version=${{ steps.version.outputs.version }}
           tags: |
-            type=raw,value=${{ inputs.platform }}
-            type=sha,prefix=${{ inputs.platform }}-
+            type=raw,value=${{ needs.prepare.outputs.platform }}
+            type=sha,prefix=${{ needs.prepare.outputs.platform }}-
             type=raw,value=${{ steps.version.outputs.version }}
-            type=raw,value=${{ inputs.platform == 'amd64' && 'latest' || 'latest-arm64' }}
+            type=raw,value=${{ needs.prepare.outputs.platform == 'amd64' && 'latest' || 'latest-arm64' }}
 
       - name: Build and push
         id: build
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/${{ inputs.platform }}
+          platforms: linux/${{ needs.prepare.outputs.platform }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             APP_VERSION=${{ steps.version.outputs.version }}
-          cache-from: type=gha,scope=${{ inputs.platform }}
-          cache-to: type=gha,mode=max,scope=${{ inputs.platform }}
+          cache-from: type=gha,scope=${{ needs.prepare.outputs.platform }}
+          cache-to: type=gha,mode=max,scope=${{ needs.prepare.outputs.platform }}
 
   # 公開 repo 不能呼叫 private k3s-homelab reusable workflow，所以用同目錄 vendored 副本。
-  # 只在 amd64 寫回叢集 manifest；arm64 給 Kino-Pi-1，不要改 k3s。
+  # push main 與手動 amd64 都寫回叢集 manifest；arm64 給 Kino-Pi-1，不要改 k3s。
   deploy-k3s:
     needs: image
-    if: inputs.platform == 'amd64'
+    if: needs.image.outputs.digest != '' && (github.event_name == 'push' || inputs.platform == 'amd64')
     uses: ./.github/workflows/update-k3s-manifest.yaml
     with:
       manifest_path: apps/network/cloudflare-ddns/resources.yaml
